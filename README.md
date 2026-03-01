@@ -1,73 +1,48 @@
-# Welcome to your Lovable project
+# Bizlo 🏙️
 
-## Project info
+> Stop guessing. Start building.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+Bizlo is an AI-powered business planning assistant that helps 
+first-time entrepreneurs open a business in Chicago. Tell us 
+your idea and location — we handle the rest.
 
-## How can I edit this code?
+## What It Does
 
-There are several ways of editing your application.
+- **Permit Guidance** — Know exactly which licenses you need, 
+  what they cost, and how long they take based on your 
+  specific business type
+- **Location Intelligence** — Real-time competition mapping, 
+  safety scoring, and CTA proximity analysis powered by 
+  Chicago's open data
+- **AI Summary** — Plain English breakdown of your entire 
+  business plan and next steps
+- **Smart Suggestions** — Alternative locations ranked by 
+  competition density and safety data
 
-**Use Lovable**
+## Built With
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+- React + Vite + TypeScript
+- Tailwind CSS + shadcn/ui
+- Supabase (auth + database)
+- Mapbox GL JS (location mapping)
+- Chicago Open Data Portal (business licenses, crime, CTA)
+- Groq AI (llama-3.3-70b-versatile)
 
-Changes made via Lovable will be committed automatically to this repo.
+## Data Sources
 
-**Use your preferred IDE**
+- [Chicago Business Licenses](https://data.cityofchicago.org/resource/xqx5-8hwx.json)
+- [Chicago Crime Data](https://data.cityofchicago.org/resource/ijzp-q8t2.json)
+- [Chicago Vacant Storefronts](https://data.cityofchicago.org/resource/7nii-7srd.json)
+- [CTA Station Locations](https://data.cityofchicago.org/resource/8mj8-j3c4.json)
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+## Built At
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+DemonHacks 2026 — DePaul University
+Theme: Loop Life
 
-Follow these steps:
+## Disclaimer
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
-
-**Edit a file directly in GitHub**
-
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
-
-**Use GitHub Codespaces**
-
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+Bizlo is for informational purposes only. This is not legal 
+or financial advice. Always verify permit requirements and 
+location data with relevant Chicago city departments and 
+a licensed professional.
