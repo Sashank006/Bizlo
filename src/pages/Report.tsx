@@ -198,12 +198,14 @@ async function fetchAreaData(lat: number, lng: number, businessType: string, are
   };
   const keywords = typeKeywords[businessType] || ["RETAIL"];
   const likeClause = keywords.map(k => `upper(license_description) like '%${k}%'`).join(" OR ");
+  const compWhere = encodeURIComponent(`within_circle(location,${lat},${lng},500) AND (${likeClause})`);
   const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString();
   const dateStr = sixMonthsAgo.split("T")[0];
+  const crimeWhere = encodeURIComponent(`within_circle(location,${lat},${lng},250) AND date>'${dateStr}'`);
 
   const [compRes, crimeRes, ctaRes] = await Promise.all([
-    fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=within_circle(location,${lat},${lng},500) AND (${likeClause})&$limit=50`).then(r => r.ok ? r.json() : []),
-    fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=within_circle(location,${lat},${lng},250) AND date>'${dateStr}'&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
+    fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=${compWhere}&$limit=50`).then(r => r.ok ? r.json() : []),
+    fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=${crimeWhere}&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
     fetch(`https://data.cityofchicago.org/resource/8mj8-j3c4.json`).then(r => r.ok ? r.json() : []),
   ]);
 
@@ -277,13 +279,16 @@ function LocationTab({ data }: { data: any }) {
         };
         const keywords = typeKeywords[data.type] || ["RETAIL"];
         const likeClause = keywords.map(k => `upper(license_description) like '%${k}%'`).join(" OR ");
+        const compWhere = encodeURIComponent(`within_circle(location,${lat},${lng},500) AND (${likeClause})`);
+        const vacantWhere = encodeURIComponent(`within_circle(location,${lat},${lng},500)`);
         const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString();
         const dateStr = sixMonthsAgo.split("T")[0];
+        const crimeWhere = encodeURIComponent(`within_circle(location,${lat},${lng},250) AND date>'${dateStr}'`);
 
         const [compRes, vacRes, crimeRes, ctaRes] = await Promise.all([
-          fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=within_circle(location,${lat},${lng},500) AND (${likeClause})&$limit=50`).then(r => r.ok ? r.json() : []),
-          fetch(`https://data.cityofchicago.org/resource/7nii-7srd.json?$where=within_circle(location,${lat},${lng},500)&$limit=50`).then(r => r.ok ? r.json() : []),
-          fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=within_circle(location,${lat},${lng},250) AND date>'${dateStr}'&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
+          fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=${compWhere}&$limit=50`).then(r => r.ok ? r.json() : []),
+          fetch(`https://data.cityofchicago.org/resource/7nii-7srd.json?$where=${vacantWhere}&$limit=50`).then(r => r.ok ? r.json() : []),
+          fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=${crimeWhere}&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
           fetch(`https://data.cityofchicago.org/resource/8mj8-j3c4.json`).then(r => r.ok ? r.json() : []),
         ]);
 
@@ -638,13 +643,19 @@ export default function Report() {
     };
     const keywords = typeKeywords[data.type] || ["RETAIL"];
     const likeClause = keywords.map(k => `upper(license_description) like '%${k}%'`).join(" OR ");
+    const compWhere = encodeURIComponent(`within_circle(location,${rLat},${rLng},500) AND (${likeClause})`);
+    const crimeWhere = encodeURIComponent(`within_circle(location,${rLat},${rLng},250) AND date>'${dateStr}'`);
 
     Promise.all([
-      fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=within_circle(location,${rLat},${rLng},500) AND (${likeClause})&$limit=50`).then(r => r.ok ? r.json() : []),
-      fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=within_circle(location,${rLat},${rLng},250) AND date>'${dateStr}'&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
+      fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=${compWhere}&$limit=50`).then(r => r.ok ? r.json() : []),
+      fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=${crimeWhere}&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
     ]).then(([comp, crime]) => {
       setCompCount(comp.length);
       setCrimeCount(crime.length);
+      setScoresLoaded(true);
+    }).catch(() => {
+      setCompCount(0);
+      setCrimeCount(0);
       setScoresLoaded(true);
     });
   }, [data.type, reportCoords]);
