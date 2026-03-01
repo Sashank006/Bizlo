@@ -8,21 +8,36 @@ export interface Permit {
   url: string;
 }
 
-const BL = "https://www.chicago.gov/city/en/depts/bacp/sbc/business_licensing.html";
-const FOOD = "https://www.chicago.gov/city/en/depts/cdph/provdrs/healthy_restaurants/svcs/retail_food_establishment_license.html";
+const BL = "https://www.chicago.gov/city/en/sites/chicago-business-licensing/home/businesslicensetypes.html";
+const FOOD = "https://www.chicago.gov/city/en/depts/bacp/supp_info/retailfoodestablishment0.html";
 const SANI = "https://www.chicago.gov/city/en/depts/cdph/provdrs/healthy_restaurants/svcs/food_sanitation_managercertificate.html";
 const BLDG = "https://www.chicago.gov/city/en/depts/bldgs/provdrs/permit.html";
 const FIRE = "https://www.chicago.gov/city/en/depts/cfd/provdrs/fire_prev_bureau.html";
 const TAX = "https://mytax.illinois.gov";
 const COSMO = "https://idfpr.illinois.gov/profs/cosmo.asp";
 const COO = "https://www.chicago.gov/city/en/depts/bldgs/provdrs/cert_of_occupancy.html";
-const LIQ = "https://www.chicago.gov/city/en/depts/bacp/supp_info/liquor_license_information.html";
+const LIQ = "https://www.chicago.gov/city/en/sites/chicago-business-licensing/home/liquorlicenses.html";
 const CDPH = "https://www.chicago.gov/city/en/depts/cdph.html";
 
-const basePermits: Record<string, Permit[]> = {
+/* ───── Retail Food License fee by sqft ───── */
+function foodLicenseFee(sqft: number): { cost: string; costMin: number; costMax: number } {
+  if (sqft <= 0) return { cost: "$660–$1,650", costMin: 660, costMax: 1650 };
+  if (sqft <= 1000) return { cost: "$660", costMin: 660, costMax: 660 };
+  if (sqft <= 2500) return { cost: "$940", costMin: 940, costMax: 940 };
+  if (sqft <= 4500) return { cost: "$1,110", costMin: 1110, costMax: 1110 };
+  if (sqft <= 10000) return { cost: "$1,320", costMin: 1320, costMax: 1320 };
+  return { cost: "$1,650", costMin: 1650, costMax: 1650 };
+}
+
+function makeFoodPermit(sqft: number): Permit {
+  const fee = foodLicenseFee(sqft);
+  return { name: "Retail Food Establishment License", agency: "CDPH", ...fee, timeline: "6-8 weeks", url: FOOD };
+}
+
+const buildPermits = (sqft: number): Record<string, Permit[]> => ({
   Restaurant: [
     { name: "Business License", agency: "BACP", cost: "$250", costMin: 250, costMax: 250, timeline: "4-6 weeks", url: BL },
-    { name: "Retail Food Establishment License", agency: "CDPH", cost: "$330", costMin: 330, costMax: 330, timeline: "6-8 weeks", url: FOOD },
+    makeFoodPermit(sqft),
     { name: "Food Sanitation Manager Certificate", agency: "CDPH", cost: "$100", costMin: 100, costMax: 100, timeline: "2-3 weeks", url: SANI },
     { name: "Building Permit", agency: "DOBS", cost: "$500-$2,000", costMin: 500, costMax: 2000, timeline: "4-8 weeks", url: BLDG },
     { name: "Fire Inspection", agency: "CFD", cost: "$150", costMin: 150, costMax: 150, timeline: "3-4 weeks", url: FIRE },
@@ -52,7 +67,7 @@ const basePermits: Record<string, Permit[]> = {
   ],
   "Coffee Shop": [
     { name: "Business License", agency: "BACP", cost: "$250", costMin: 250, costMax: 250, timeline: "4-6 weeks", url: BL },
-    { name: "Retail Food Establishment License", agency: "CDPH", cost: "$330", costMin: 330, costMax: 330, timeline: "6-8 weeks", url: FOOD },
+    makeFoodPermit(sqft),
     { name: "Food Sanitation Manager Certificate", agency: "CDPH", cost: "$100", costMin: 100, costMax: 100, timeline: "2-3 weeks", url: SANI },
     { name: "Fire Inspection", agency: "CFD", cost: "$150", costMin: 150, costMax: 150, timeline: "3-4 weeks", url: FIRE },
     { name: "Sign Permit", agency: "DOBS", cost: "$100-$500", costMin: 100, costMax: 500, timeline: "2-4 weeks", url: BLDG },
@@ -86,30 +101,30 @@ const basePermits: Record<string, Permit[]> = {
   Hotel: [
     { name: "Business License", agency: "BACP", cost: "$250", costMin: 250, costMax: 250, timeline: "4-6 weeks", url: BL },
     { name: "Hotel/Motel License", agency: "BACP", cost: "$500", costMin: 500, costMax: 500, timeline: "6-8 weeks", url: BL },
-    { name: "Food Service License (if serving food)", agency: "CDPH", cost: "$330", costMin: 330, costMax: 330, timeline: "6-8 weeks", url: FOOD },
+    makeFoodPermit(sqft),
     { name: "Fire Inspection", agency: "CFD", cost: "$150", costMin: 150, costMax: 150, timeline: "3-4 weeks", url: FIRE },
     { name: "Building Permit", agency: "DOBS", cost: "$500-$2,000", costMin: 500, costMax: 2000, timeline: "4-8 weeks", url: BLDG },
     { name: "Certificate of Occupancy", agency: "DOBS", cost: "$150", costMin: 150, costMax: 150, timeline: "3-4 weeks", url: COO },
   ],
   Bar: [
     { name: "Business License", agency: "BACP", cost: "$250", costMin: 250, costMax: 250, timeline: "4-6 weeks", url: BL },
-    { name: "Liquor License", agency: "City of Chicago", cost: "$4,400", costMin: 4400, costMax: 4400, timeline: "8-12 weeks", url: LIQ },
+    { name: "Liquor License", agency: "City of Chicago", cost: "$4,440", costMin: 4440, costMax: 4440, timeline: "8-12 weeks", url: LIQ },
     { name: "Late Hour License (if open past 2am)", agency: "BACP", cost: "$1,000", costMin: 1000, costMax: 1000, timeline: "6-8 weeks", url: BL },
     { name: "Fire Inspection", agency: "CFD", cost: "$150", costMin: 150, costMax: 150, timeline: "3-4 weeks", url: FIRE },
     { name: "Building Permit", agency: "DOBS", cost: "$500-$2,000", costMin: 500, costMax: 2000, timeline: "4-8 weeks", url: BLDG },
     { name: "Certificate of Occupancy", agency: "DOBS", cost: "$150", costMin: 150, costMax: 150, timeline: "3-4 weeks", url: COO },
     { name: "Sign Permit", agency: "DOBS", cost: "$100-$500", costMin: 100, costMax: 500, timeline: "2-4 weeks", url: BLDG },
   ],
-};
+});
 
 const liquorPermit: Permit = {
-  name: "Liquor License", agency: "City of Chicago", cost: "$4,400", costMin: 4400, costMax: 4400, timeline: "8-12 weeks", url: LIQ,
+  name: "Liquor License", agency: "City of Chicago", cost: "$4,440", costMin: 4440, costMax: 4440, timeline: "8-12 weeks", url: LIQ,
 };
 
-export function getPermits(businessType: string, sellsAlcohol: boolean): Permit[] {
-  const type = Object.keys(basePermits).includes(businessType) ? businessType : "Office";
-  const permits = [...(basePermits[type] || basePermits.Office)];
-  // Add liquor license if sells alcohol and not already included (Bar type already has it)
+export function getPermits(businessType: string, sellsAlcohol: boolean, sqft: number = 0): Permit[] {
+  const allPermits = buildPermits(sqft);
+  const type = Object.keys(allPermits).includes(businessType) ? businessType : "Office";
+  const permits = [...(allPermits[type] || allPermits.Office)];
   if (sellsAlcohol && !permits.some(p => p.name === "Liquor License")) {
     permits.push(liquorPermit);
   }

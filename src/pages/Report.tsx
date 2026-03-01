@@ -632,7 +632,7 @@ function AiSummaryTab({ data }: { data: any }) {
 /* ───── Main Report ───── */
 export default function Report() {
   const { data } = useBusiness();
-  const permits = getPermits(data.type, data.sellsAlcohol);
+  const permits = getPermits(data.type, data.sellsAlcohol, data.sqft);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
 
   // Live viability sub-scores
@@ -783,6 +783,11 @@ export default function Report() {
                   <p className="text-2xl font-bold">{getMaxTimeline(permits)}</p>
                 </div>
               </div>
+              <a href="https://chicagobusinessdirect.org" target="_blank" rel="noopener noreferrer" className="block mt-4">
+                <Button variant="accent" className="w-full text-base py-6">
+                  <ExternalLink className="mr-2 h-5 w-5" /> Apply Online at ChicagoBusinessDirect.org
+                </Button>
+              </a>
               <p className="text-xs text-muted-foreground italic mt-2">{PERMIT_DISCLAIMER}</p>
             </div>
           </TabsContent>
