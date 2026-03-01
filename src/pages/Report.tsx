@@ -793,7 +793,7 @@ export default function Report() {
                   <p className="text-2xl font-bold">{getMaxTimeline(permits)}</p>
                 </div>
               </div>
-              <a href="https://www.chicago.gov/city/en/depts/bacp/provdrs/bus.html" target="_blank" rel="noopener noreferrer" className="block mt-4">
+              <a href="https://webapps1.chicago.gov/AccountServices/login.jsp" target="_blank" rel="noopener noreferrer" className="block mt-4">
                 <Button variant="accent" className="w-full text-base py-6">
                   <ExternalLink className="mr-2 h-5 w-5" /> Apply Online at Chicago BACP
                 </Button>
