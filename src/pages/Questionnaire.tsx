@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
+import AddressAutocomplete from "@/components/AddressAutocomplete";
 import { useBusiness, BusinessData } from "@/contexts/BusinessContext";
 import { supabase } from "@/integrations/supabase/client";
 import { motion, AnimatePresence } from "framer-motion";
@@ -192,7 +193,11 @@ export default function Questionnaire() {
                 <div className="space-y-5">
                   <div>
                     <Label>Street Address in Chicago *</Label>
-                    <Input className="mt-1" value={data.address} onChange={e => { update({ address: e.target.value.slice(0, MAX_TEXT), hasLocation: true }); }} placeholder="123 W Madison St, Chicago, IL" maxLength={MAX_TEXT} />
+                    <AddressAutocomplete
+                      value={data.address}
+                      onChange={(addr) => update({ address: addr, hasLocation: true })}
+                      className="mt-1"
+                    />
                     {show && <FieldError msg={errors.address} />}
                   </div>
                   <div>
