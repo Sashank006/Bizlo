@@ -310,8 +310,17 @@ function LocationTab({ data }: { data: any }) {
           fetch(`https://data.cityofchicago.org/resource/8mj8-j3c4.json`).then(r => r.ok ? r.json() : []),
         ]);
 
-        setCompetitors(compRes);
-        setVacants(vacRes);
+        // Keep only 10 nearest for map pins
+        const sortByDist = (arr: any[]) => arr
+          .map((item: any) => {
+            const iLat = parseFloat(item.latitude || item.location?.latitude);
+            const iLng = parseFloat(item.longitude || item.location?.longitude);
+            return { ...item, _dist: (iLat && iLng) ? haversine(lat, lng, iLat, iLng) : Infinity };
+          })
+          .sort((a: any, b: any) => a._dist - b._dist)
+          .slice(0, 10);
+        setCompetitors(sortByDist(compRes));
+        setVacants(sortByDist(vacRes));
         setCrimes(crimeRes);
 
         const stationMap = new Map<string, { name: string; walkMin: number }>();
@@ -378,15 +387,10 @@ function LocationTab({ data }: { data: any }) {
           };
         }));
 
-        // Only show suggestions that score better than current location
-        const betterOnes = suggestionResults.filter(s => s.score > mainOverall).sort((a, b) => b.score - a.score).slice(0, 3);
-        if (betterOnes.length === 0) {
-          setAllComparable(true);
-          setSuggestions([]);
-        } else {
-          setAllComparable(false);
-          setSuggestions(betterOnes);
-        }
+        // Always show top 3 alternatives sorted by score
+        const sorted = suggestionResults.sort((a, b) => b.score - a.score).slice(0, 3);
+        setSuggestions(sorted);
+        setAllComparable(sorted.every(s => s.score <= mainOverall));
       } catch (e) {
         console.error("Failed to fetch location data:", e);
       } finally {
