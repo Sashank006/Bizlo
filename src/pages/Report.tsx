@@ -452,6 +452,15 @@ function LocationTab({ data }: { data: any }) {
           .addTo(map);
       });
 
+      // Blue = user's entered location
+      const userEl = document.createElement("div");
+      userEl.style.cssText = "width:14px;height:14px;background:#3b82f6;border-radius:50%;border:2px solid #fff;";
+      new mapboxgl.Marker({ element: userEl })
+        .setLngLat([lng, lat])
+        .setPopup(new mapboxgl.Popup({ offset: 10 }).setHTML(
+          `<div style="color:#000;font-size:12px;"><strong>Your Location</strong><br/>${data.address || ""}</div>`
+        ))
+        .addTo(map);
     });
 
 
@@ -481,6 +490,7 @@ function LocationTab({ data }: { data: any }) {
       <div className="flex items-center gap-4 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-full" style={{ background: "#ef4444" }} /> Competitors ({competitors.length})</span>
         <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-full" style={{ background: "#22c55e" }} /> Vacant Storefronts ({vacants.length})</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-full" style={{ background: "#3b82f6" }} /> Your Location</span>
       </div>
       {loading ? (
         <div className="flex items-center justify-center py-4 gap-2 text-muted-foreground">
