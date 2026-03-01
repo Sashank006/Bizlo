@@ -523,7 +523,7 @@ function LocationTab({ data }: { data: any }) {
             <div className="space-y-3">
               <h3 className="text-lg font-semibold flex items-center gap-2">
                 <MapPin className="h-5 w-5 text-primary" />
-                Better Nearby Alternatives
+                Alternatives
               </h3>
               <div className="grid gap-4 sm:grid-cols-3">
                 {suggestions.map((s) => {
