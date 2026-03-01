@@ -1,28 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Plus, LogOut, Building2, Settings, Key } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useBusiness, defaultBusinessData } from "@/contexts/BusinessContext";
-import type { User } from "@supabase/supabase-js";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [user, setUser] = useState<User | null>(null);
+  const { user } = useRequireAuth();
   const { businesses, setBusinesses, setData } = useBusiness();
-
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) navigate("/auth?mode=login");
-      else setUser(session.user);
-    });
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) navigate("/auth?mode=login");
-      else setUser(session.user);
-    });
-    return () => subscription.unsubscribe();
-  }, [navigate]);
 
   useEffect(() => {
     if (!user) return;

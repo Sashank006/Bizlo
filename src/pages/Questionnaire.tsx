@@ -10,6 +10,7 @@ import { useBusiness, BusinessData } from "@/contexts/BusinessContext";
 import { supabase } from "@/integrations/supabase/client";
 import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
 
 const STEPS = ["Business Basics", "Location", "Target Market", "Operations", "Review & Confirm"];
 const BUSINESS_TYPES = ["Restaurant", "Retail", "Salon", "Office", "Other"];
@@ -18,6 +19,7 @@ const CUSTOMER_TYPES = ["Students", "Office Workers", "Tourists", "Residents"];
 
 export default function Questionnaire() {
   const navigate = useNavigate();
+  useRequireAuth();
   const { data, setData } = useBusiness();
   const [step, setStep] = useState(0);
 
