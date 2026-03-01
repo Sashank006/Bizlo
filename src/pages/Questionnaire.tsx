@@ -20,7 +20,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { toast } from "sonner";
 
 const STEPS = ["Business Basics", "Location", "Target Market", "Operations", "Review & Confirm"];
-const BUSINESS_TYPES = ["Restaurant", "Retail", "Salon", "Office", "Coffee Shop", "Gym", "Daycare", "Medical", "Hotel", "Bar", "Other"];
+const KNOWN_TYPES = ["Restaurant", "Retail", "Salon", "Office", "Coffee Shop", "Gym", "Daycare", "Medical", "Hotel", "Bar"];
+const BUSINESS_TYPES = [...KNOWN_TYPES, "Other"];
 const AREAS = ["Loop", "West Loop", "River North", "South Loop"];
 const CUSTOMER_TYPES = ["Students", "Office Workers", "Tourists", "Residents"];
 
@@ -180,10 +181,23 @@ export default function Questionnaire() {
                   </div>
                   <div>
                     <Label>Business Type *</Label>
-                    <Select value={data.type} onValueChange={v => update({ type: v })}>
-                      <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                    <Select value={KNOWN_TYPES.includes(data.type) ? data.type : "Other"} onValueChange={v => {
+                      if (v === "Other") update({ type: "" });
+                      else update({ type: v });
+                    }}>
+                      <SelectTrigger className="mt-1"><SelectValue placeholder="Select a type" /></SelectTrigger>
                       <SelectContent>{BUSINESS_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
                     </Select>
+                    {!KNOWN_TYPES.includes(data.type) && (
+                      <div className="mt-2">
+                        <Input
+                          placeholder="Enter your business type (e.g., Laundromat)"
+                          value={data.type}
+                          onChange={e => update({ type: e.target.value.slice(0, MAX_TEXT) })}
+                          maxLength={MAX_TEXT}
+                        />
+                      </div>
+                    )}
                     {show && <FieldError msg={errors.type} />}
                   </div>
                   <div className="flex items-center justify-between"><Label>Selling food?</Label><Switch checked={data.sellsFood} onCheckedChange={v => update({ sellsFood: v })} /></div>

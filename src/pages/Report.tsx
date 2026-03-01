@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { generateReport } from "@/lib/generatePdf";
 import { Link } from "react-router-dom";
 import { useBusiness } from "@/contexts/BusinessContext";
-import { getPermits, getTotalCostRange, getMaxTimeline, PERMIT_DISCLAIMER } from "@/lib/permits";
+import { getPermits, getTotalCostRange, getMaxTimeline, PERMIT_DISCLAIMER, isKnownBusinessType, OTHER_BUSINESS_URL } from "@/lib/permits";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
@@ -756,6 +756,16 @@ export default function Report() {
           {/* Permits */}
           <TabsContent value="permits">
             <div className="space-y-4">
+              {!isKnownBusinessType(data.type) && (
+                <a href={OTHER_BUSINESS_URL} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-5">
+                  <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0" />
+                  <div className="flex-1">
+                    <p className="font-semibold text-sm">"{data.type}" is not a standard category</p>
+                    <p className="text-xs text-muted-foreground">Your business type may require additional or different licenses. Visit the City of Chicago's Other Business Activities page for specific requirements.</p>
+                  </div>
+                  <ExternalLink className="h-4 w-4 text-amber-500 shrink-0" />
+                </a>
+              )}
               {permits.map(p => (
                 <div key={p.name} className="flex items-start gap-4 rounded-xl border border-border bg-card p-5">
                   <Checkbox checked={!!checked[p.name]} onCheckedChange={v => setChecked(prev => ({ ...prev, [p.name]: !!v }))} className="mt-1" />

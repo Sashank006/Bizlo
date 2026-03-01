@@ -7,6 +7,7 @@ export interface Permit {
   timeline: string;
   url: string;
 }
+const OTHER_BIZ = "https://www.chicago.gov/city/en/sites/chicago-business-licensing/home/otherbusinessactivities.html";
 
 const BL = "https://www.chicago.gov/city/en/sites/chicago-business-licensing/home/businesslicensetypes.html";
 const FOOD = "https://www.chicago.gov/city/en/depts/bacp/supp_info/retailfoodestablishment0.html";
@@ -121,10 +122,27 @@ const liquorPermit: Permit = {
   name: "Liquor License", agency: "City of Chicago", cost: "$4,440", costMin: 4440, costMax: 4440, timeline: "8-12 weeks", url: LIQ,
 };
 
+export const KNOWN_BUSINESS_TYPES = ["Restaurant", "Retail", "Salon", "Office", "Coffee Shop", "Gym", "Daycare", "Medical", "Hotel", "Bar"];
+
+export function isKnownBusinessType(type: string): boolean {
+  return KNOWN_BUSINESS_TYPES.includes(type);
+}
+
+export const OTHER_BUSINESS_URL = OTHER_BIZ;
+
 export function getPermits(businessType: string, sellsAlcohol: boolean, sqft: number = 0): Permit[] {
   const allPermits = buildPermits(sqft);
-  const type = Object.keys(allPermits).includes(businessType) ? businessType : "Office";
-  const permits = [...(allPermits[type] || allPermits.Office)];
+  if (!isKnownBusinessType(businessType)) {
+    // Unknown type: return basic generic permits
+    return [
+      { name: "Business License", agency: "BACP", cost: "$250", costMin: 250, costMax: 250, timeline: "4-6 weeks", url: BL },
+      { name: "Building Permit (if renovating)", agency: "DOBS", cost: "$500-$2,000", costMin: 500, costMax: 2000, timeline: "4-8 weeks", url: BLDG },
+      { name: "Certificate of Occupancy", agency: "DOBS", cost: "$150", costMin: 150, costMax: 150, timeline: "3-4 weeks", url: COO },
+      { name: "Sales Tax Registration", agency: "IL Dept of Revenue", cost: "Free", costMin: 0, costMax: 0, timeline: "1 week", url: TAX },
+      ...(sellsAlcohol ? [liquorPermit] : []),
+    ];
+  }
+  const permits = [...(allPermits[businessType] || allPermits.Office)];
   if (sellsAlcohol && !permits.some(p => p.name === "Liquor License")) {
     permits.push(liquorPermit);
   }
