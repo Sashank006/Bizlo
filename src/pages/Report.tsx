@@ -32,15 +32,15 @@ async function geocodeAddress(address: string): Promise<[number, number]> {
 /* ───── Reverse geocode to get street/neighborhood name ───── */
 async function reverseGeocode(lat: number, lng: number): Promise<string> {
   const token = import.meta.env.VITE_MAPBOX_TOKEN;
-  if (!token) return `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
+  if (!token) return "Nearby Area";
   try {
     const res = await fetch(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${token}&types=neighborhood,locality&limit=1`
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${token}&types=neighborhood,locality,place&limit=1`
     );
-    if (!res.ok) return `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
+    if (!res.ok) return "Nearby Area";
     const data = await res.json();
-    return data.features?.[0]?.text || `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
-  } catch { return `${lat.toFixed(3)}, ${lng.toFixed(3)}`; }
+    return data.features?.[0]?.text || "Nearby Area";
+  } catch { return "Nearby Area"; }
 }
 
 /* ───── Market Fit Score ───── */
@@ -376,21 +376,8 @@ function LocationTab({ data }: { data: any }) {
           .addTo(map);
       });
 
-      // Blue = crime incidents
-      crimes.forEach((cr: any) => {
-        const cLat = cr.latitude || cr.location?.latitude;
-        const cLng = cr.longitude || cr.location?.longitude;
-        if (!cLat || !cLng) return;
-        const el = document.createElement("div");
-        el.style.cssText = "width:10px;height:10px;background:#3b82f6;border-radius:50%;border:2px solid #fff;cursor:pointer;opacity:0.7;";
-        new mapboxgl.Marker({ element: el })
-          .setLngLat([parseFloat(cLng), parseFloat(cLat)])
-          .setPopup(new mapboxgl.Popup({ offset: 10 }).setHTML(
-            `<div style="color:#000;font-size:12px;"><strong>${cr.primary_type || "Incident"}</strong><br/>${cr.description || ""}<br/>${cr.date ? new Date(cr.date).toLocaleDateString() : ""}</div>`
-          ))
-          .addTo(map);
-      });
     });
+
 
     return () => {
       map.remove();
@@ -434,7 +421,7 @@ function LocationTab({ data }: { data: any }) {
               {crimeApiFailed ? (
                 <p className="text-xs text-muted-foreground mt-1">⚠️ Safety data temporarily unavailable. Exercise general urban caution and verify locally.</p>
               ) : (
-                <p className="text-xs text-muted-foreground mt-1">Crime rate: {crimeRate(crimes.length)}/1,000 pop. · Based on historical data (250m, 6 mo)</p>
+                <p className="text-xs text-muted-foreground mt-1">Based on historical Chicago crime data</p>
               )}
             </div>
 
@@ -449,7 +436,6 @@ function LocationTab({ data }: { data: any }) {
           <div className="flex items-center gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded-full bg-danger" /> Competitors</span>
             <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded-full bg-success" /> Vacant Storefronts</span>
-            <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded-full" style={{ background: "#3b82f6" }} /> Crime Incidents</span>
           </div>
 
           {/* Alternative Location Suggestions */}
@@ -468,7 +454,6 @@ function LocationTab({ data }: { data: any }) {
                 {suggestions.map((s) => {
                   const compLabel = s.compCount <= 3 ? "🟢 Low" : s.compCount <= 8 ? "🟡 Medium" : "🔴 High";
                   const safeLabel = crimeRiskLabel(s.crimeCount);
-                  const rate = crimeRate(s.crimeCount);
                   const scoreColor = s.score >= 71 ? "text-success" : s.score >= 41 ? "text-warning" : "text-danger";
                   // Split area into distance + name parts
                   const [distPart, ...nameParts] = s.area.split(" · ");
@@ -485,7 +470,7 @@ function LocationTab({ data }: { data: any }) {
                       <p className="text-xs text-muted-foreground italic">{s.reason}</p>
                       <div className="space-y-1 text-xs">
                         <div className="flex justify-between"><span className="text-muted-foreground">Competition</span><span>{compLabel}</span></div>
-                        <div className="flex justify-between"><span className="text-muted-foreground">Safety</span><span>{safeLabel} ({rate}/1k)</span></div>
+                        <div className="flex justify-between"><span className="text-muted-foreground">Safety</span><span>{safeLabel}</span></div>
                         <div className="flex justify-between"><span className="text-muted-foreground">Nearest CTA</span><span>{s.ctaName} ({s.ctaMin} min)</span></div>
                       </div>
                     </div>
