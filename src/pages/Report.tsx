@@ -516,11 +516,6 @@ function LocationTab({ data }: { data: any }) {
           </div>
 
           {/* Alternative Location Suggestions */}
-          {allComparable && (
-            <div className="rounded-xl border border-border bg-card p-5 text-center">
-              <p className="text-sm text-muted-foreground">✅ Your chosen location is competitive with nearby alternatives.</p>
-            </div>
-          )}
           {suggestions.length > 0 && (
             <div className="space-y-3">
               <h3 className="text-lg font-semibold flex items-center gap-2">
