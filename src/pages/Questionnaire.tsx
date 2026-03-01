@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,16 +17,68 @@ const BUSINESS_TYPES = ["Restaurant", "Retail", "Salon", "Office", "Coffee Shop"
 const AREAS = ["Loop", "West Loop", "River North", "South Loop"];
 const CUSTOMER_TYPES = ["Students", "Office Workers", "Tourists", "Residents"];
 
+const MAX_TEXT = 200;
+const sanitize = (v: string) => v.trim().slice(0, MAX_TEXT);
+
+function FieldError({ msg }: { msg?: string }) {
+  if (!msg) return null;
+  return <p className="mt-1 text-xs text-destructive">{msg}</p>;
+}
+
+type Errors = Record<string, string>;
+
+function validateStep(step: number, data: BusinessData): Errors {
+  const e: Errors = {};
+
+  if (step === 0) {
+    if (!data.name.trim()) e.name = "This field is required";
+    else if (data.name.trim().length < 2) e.name = "Minimum 2 characters";
+    if (!data.type) e.type = "Please select a business type";
+    if (!data.budget || data.budget <= 0) e.budget = "Please enter a valid number";
+    if (!data.employees || data.employees <= 0 || !Number.isInteger(data.employees)) e.employees = "Please enter a valid whole number";
+    if (!data.launchDate) e.launchDate = "This field is required";
+    else if (new Date(data.launchDate) <= new Date()) e.launchDate = "Date must be in the future";
+  }
+
+  if (step === 1) {
+    if (data.hasLocation) {
+      if (!data.address.trim()) e.address = "This field is required";
+      else if (data.address.trim().length < 5) e.address = "Minimum 5 characters";
+    } else {
+      if (!data.area) e.area = "Please select an area";
+    }
+    if (!data.sqft || data.sqft <= 0) e.sqft = "Please enter a valid number";
+    else if (data.sqft < 100 || data.sqft > 50000) e.sqft = "Must be between 100 and 50,000";
+    if (!data.rentBudget || data.rentBudget <= 0) e.rentBudget = "Please enter a valid number";
+  }
+
+  if (step === 2) {
+    if (!data.avgTicket || data.avgTicket <= 0) e.avgTicket = "Please enter a valid number";
+    if (!data.dailyCustomers || data.dailyCustomers <= 0 || !Number.isInteger(data.dailyCustomers)) e.dailyCustomers = "Please enter a valid whole number";
+    if (data.openTime && data.closeTime && data.closeTime <= data.openTime) e.closeTime = "End time must be after start time";
+  }
+
+  return e;
+}
+
 export default function Questionnaire() {
   const navigate = useNavigate();
   useRequireAuth();
   const { data, setData } = useBusiness();
   const [step, setStep] = useState(0);
+  const [touched, setTouched] = useState(false);
 
   const update = (partial: Partial<BusinessData>) => setData(prev => ({ ...prev, ...partial }));
 
-  const next = () => { if (step < 4) setStep(step + 1); };
-  const prev = () => { if (step > 0) setStep(step - 1); };
+  const errors = useMemo(() => validateStep(step, data), [step, data]);
+  const isValid = Object.keys(errors).length === 0;
+
+  const next = () => {
+    setTouched(true);
+    if (!isValid) return;
+    if (step < 4) { setStep(step + 1); setTouched(false); }
+  };
+  const prev = () => { if (step > 0) { setStep(step - 1); setTouched(false); } };
 
   const handleSubmit = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -34,8 +86,8 @@ export default function Questionnaire() {
 
     const { data: inserted, error } = await supabase.from("businesses").insert({
       user_id: user.id,
-      name: data.name, type: data.type, sells_food: data.sellsFood, sells_alcohol: data.sellsAlcohol,
-      has_location: data.hasLocation, address: data.address, area: data.area,
+      name: sanitize(data.name), type: data.type, sells_food: data.sellsFood, sells_alcohol: data.sellsAlcohol,
+      has_location: data.hasLocation, address: sanitize(data.address), area: data.area,
       budget: data.budget, employees: data.employees, launch_date: data.launchDate || null,
       rent_budget: data.rentBudget, sqft: data.sqft,
       target_customers: data.targetCustomers.join(","),
@@ -44,9 +96,7 @@ export default function Questionnaire() {
     }).select().single();
 
     if (error) { console.error(error); return; }
-    if (inserted) {
-      setData(prev => ({ ...prev, id: inserted.id }));
-    }
+    if (inserted) setData(prev => ({ ...prev, id: inserted.id }));
     navigate("/analysis");
   };
 
@@ -58,6 +108,19 @@ export default function Questionnaire() {
     });
   };
 
+  const numChange = (field: keyof BusinessData, integer?: boolean) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    if (raw === "") { update({ [field]: 0 } as any); return; }
+    const n = integer ? parseInt(raw, 10) : parseFloat(raw);
+    if (isNaN(n)) return; // ignore non-numeric
+    update({ [field]: n } as any);
+  };
+
+  const textChange = (field: keyof BusinessData) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    update({ [field]: e.target.value.slice(0, MAX_TEXT) } as any);
+  };
+
+  const show = touched;
   const progress = ((step + 1) / STEPS.length) * 100;
 
   return (
@@ -66,29 +129,45 @@ export default function Questionnaire() {
         <h1 className="mb-2 text-2xl font-bold">New Business Plan</h1>
         <p className="mb-6 text-sm text-muted-foreground">{STEPS[step]}</p>
 
-        {/* Progress bar */}
         <div className="mb-8 h-2 w-full overflow-hidden rounded-full bg-secondary">
           <motion.div className="h-full gradient-teal rounded-full" animate={{ width: `${progress}%` }} transition={{ duration: 0.4 }} />
         </div>
 
-        {/* Steps */}
         <div className="rounded-xl border border-border bg-card p-6 sm:p-8">
           <AnimatePresence mode="wait">
             <motion.div key={step} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }}>
               {step === 0 && (
                 <div className="space-y-5">
-                  <div><Label>Business Name</Label><Input className="mt-1" value={data.name} onChange={e => update({ name: e.target.value })} placeholder="My Chicago Café" /></div>
-                  <div><Label>Business Type</Label>
+                  <div>
+                    <Label>Business Name *</Label>
+                    <Input className="mt-1" value={data.name} onChange={textChange("name")} placeholder="My Chicago Café" maxLength={MAX_TEXT} />
+                    {show && <FieldError msg={errors.name} />}
+                  </div>
+                  <div>
+                    <Label>Business Type *</Label>
                     <Select value={data.type} onValueChange={v => update({ type: v })}>
                       <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                       <SelectContent>{BUSINESS_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
                     </Select>
+                    {show && <FieldError msg={errors.type} />}
                   </div>
                   <div className="flex items-center justify-between"><Label>Selling food?</Label><Switch checked={data.sellsFood} onCheckedChange={v => update({ sellsFood: v })} /></div>
                   <div className="flex items-center justify-between"><Label>Selling alcohol?</Label><Switch checked={data.sellsAlcohol} onCheckedChange={v => update({ sellsAlcohol: v })} /></div>
-                  <div><Label>Estimated Startup Budget ($)</Label><Input className="mt-1" type="number" value={data.budget || ""} onChange={e => update({ budget: Number(e.target.value) })} /></div>
-                  <div><Label>Number of Employees</Label><Input className="mt-1" type="number" value={data.employees || ""} onChange={e => update({ employees: Number(e.target.value) })} /></div>
-                  <div><Label>Target Opening Date</Label><Input className="mt-1" type="date" value={data.launchDate} onChange={e => update({ launchDate: e.target.value })} /></div>
+                  <div>
+                    <Label>Estimated Startup Budget ($) *</Label>
+                    <Input className="mt-1" type="number" min="1" value={data.budget || ""} onChange={numChange("budget")} />
+                    {show && <FieldError msg={errors.budget} />}
+                  </div>
+                  <div>
+                    <Label>Number of Employees *</Label>
+                    <Input className="mt-1" type="number" min="1" step="1" value={data.employees || ""} onChange={numChange("employees", true)} />
+                    {show && <FieldError msg={errors.employees} />}
+                  </div>
+                  <div>
+                    <Label>Target Opening Date *</Label>
+                    <Input className="mt-1" type="date" value={data.launchDate} onChange={e => update({ launchDate: e.target.value })} />
+                    {show && <FieldError msg={errors.launchDate} />}
+                  </div>
                 </div>
               )}
 
@@ -96,17 +175,31 @@ export default function Questionnaire() {
                 <div className="space-y-5">
                   <div className="flex items-center justify-between"><Label>Do you have an address in mind?</Label><Switch checked={data.hasLocation} onCheckedChange={v => update({ hasLocation: v })} /></div>
                   {data.hasLocation ? (
-                    <div><Label>Address</Label><Input className="mt-1" value={data.address} onChange={e => update({ address: e.target.value })} placeholder="123 W Madison St" /></div>
+                    <div>
+                      <Label>Address *</Label>
+                      <Input className="mt-1" value={data.address} onChange={textChange("address")} placeholder="123 W Madison St" maxLength={MAX_TEXT} />
+                      {show && <FieldError msg={errors.address} />}
+                    </div>
                   ) : (
-                    <div><Label>Preferred Area</Label>
+                    <div>
+                      <Label>Preferred Area *</Label>
                       <Select value={data.area} onValueChange={v => update({ area: v })}>
                         <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                         <SelectContent>{AREAS.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}</SelectContent>
                       </Select>
+                      {show && <FieldError msg={errors.area} />}
                     </div>
                   )}
-                  <div><Label>Square Footage Needed</Label><Input className="mt-1" type="number" value={data.sqft || ""} onChange={e => update({ sqft: Number(e.target.value) })} /></div>
-                  <div><Label>Monthly Rent Budget ($)</Label><Input className="mt-1" type="number" value={data.rentBudget || ""} onChange={e => update({ rentBudget: Number(e.target.value) })} /></div>
+                  <div>
+                    <Label>Square Footage Needed *</Label>
+                    <Input className="mt-1" type="number" min="100" max="50000" value={data.sqft || ""} onChange={numChange("sqft")} />
+                    {show && <FieldError msg={errors.sqft} />}
+                  </div>
+                  <div>
+                    <Label>Monthly Rent Budget ($) *</Label>
+                    <Input className="mt-1" type="number" min="1" value={data.rentBudget || ""} onChange={numChange("rentBudget")} />
+                    {show && <FieldError msg={errors.rentBudget} />}
+                  </div>
                 </div>
               )}
 
@@ -123,11 +216,23 @@ export default function Questionnaire() {
                       ))}
                     </div>
                   </div>
-                  <div><Label>Average Ticket Size ($)</Label><Input className="mt-1" type="number" value={data.avgTicket || ""} onChange={e => update({ avgTicket: Number(e.target.value) })} /></div>
-                  <div><Label>Expected Daily Customers</Label><Input className="mt-1" type="number" value={data.dailyCustomers || ""} onChange={e => update({ dailyCustomers: Number(e.target.value) })} /></div>
+                  <div>
+                    <Label>Average Ticket Size ($) *</Label>
+                    <Input className="mt-1" type="number" min="1" value={data.avgTicket || ""} onChange={numChange("avgTicket")} />
+                    {show && <FieldError msg={errors.avgTicket} />}
+                  </div>
+                  <div>
+                    <Label>Expected Daily Customers *</Label>
+                    <Input className="mt-1" type="number" min="1" step="1" value={data.dailyCustomers || ""} onChange={numChange("dailyCustomers", true)} />
+                    {show && <FieldError msg={errors.dailyCustomers} />}
+                  </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div><Label>Open Time</Label><Input className="mt-1" type="time" value={data.openTime} onChange={e => update({ openTime: e.target.value })} /></div>
-                    <div><Label>Close Time</Label><Input className="mt-1" type="time" value={data.closeTime} onChange={e => update({ closeTime: e.target.value })} /></div>
+                    <div>
+                      <Label>Close Time</Label>
+                      <Input className="mt-1" type="time" value={data.closeTime} onChange={e => update({ closeTime: e.target.value })} />
+                      {show && <FieldError msg={errors.closeTime} />}
+                    </div>
                   </div>
                 </div>
               )}
@@ -169,11 +274,10 @@ export default function Questionnaire() {
             </motion.div>
           </AnimatePresence>
 
-          {/* Navigation */}
           <div className="mt-8 flex justify-between">
             <Button variant="outline" onClick={prev} disabled={step === 0}><ArrowLeft className="mr-2 h-4 w-4" /> Back</Button>
             {step < 4 ? (
-              <Button variant="accent" onClick={next}>Next <ArrowRight className="ml-2 h-4 w-4" /></Button>
+              <Button variant="accent" onClick={next} disabled={touched && !isValid}>Next <ArrowRight className="ml-2 h-4 w-4" /></Button>
             ) : (
               <Button variant="accent" onClick={handleSubmit}><Check className="mr-2 h-4 w-4" /> Run Analysis</Button>
             )}
