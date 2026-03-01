@@ -1,6 +1,6 @@
 # Bizlo 🏙️
 
-> Stop guessing. Start building.
+> We Handle the Complexity, You Build the Dream
 
 Bizlo is an AI-powered business planning assistant that helps 
 first-time entrepreneurs open a business in Chicago. Tell us 
