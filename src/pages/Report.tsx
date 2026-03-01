@@ -5,15 +5,30 @@ import { useBusiness } from "@/contexts/BusinessContext";
 import { getPermits, getTotalCostRange, getMaxTimeline, PERMIT_DISCLAIMER } from "@/lib/permits";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, ExternalLink, Download, MapPin, Sparkles, Loader2, RefreshCw } from "lucide-react";
+import { ArrowLeft, ExternalLink, Download, Sparkles, Loader2, RefreshCw, AlertTriangle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import "mapbox-gl/dist/mapbox-gl.css";
 
+/* ───── Area center coordinates ───── */
+const AREA_COORDS: Record<string, [number, number]> = {
+  Loop: [41.8827, -87.6233],
+  "West Loop": [41.8819, -87.6464],
+  "River North": [41.8926, -87.6333],
+  "South Loop": [41.8676, -87.6270],
+};
+
+function getCoords(data: any): [number, number] {
+  return AREA_COORDS[data.area] || AREA_COORDS.Loop;
+}
+
+/* ───── Viability Circle ───── */
 function ViabilityCircle({ score }: { score: number }) {
   const r = 54, c = 2 * Math.PI * r;
   const offset = c - (score / 100) * c;
-  const color = score >= 70 ? "hsl(var(--success))" : score >= 40 ? "hsl(var(--warning))" : "hsl(var(--danger))";
+  const color = score >= 71 ? "hsl(var(--success))" : score >= 41 ? "hsl(var(--warning))" : "hsl(var(--danger))";
   return (
     <div className="relative inline-flex items-center justify-center">
       <svg width="140" height="140" className="-rotate-90">
@@ -26,9 +41,34 @@ function ViabilityCircle({ score }: { score: number }) {
 }
 
 function RiskBadge({ score }: { score: number }) {
-  if (score >= 70) return <span className="rounded-full bg-success/20 px-3 py-1 text-sm font-medium text-success">Low Risk</span>;
-  if (score >= 40) return <span className="rounded-full bg-warning/20 px-3 py-1 text-sm font-medium text-warning">Medium Risk</span>;
+  if (score >= 71) return <span className="rounded-full bg-success/20 px-3 py-1 text-sm font-medium text-success">Strong Viability</span>;
+  if (score >= 41) return <span className="rounded-full bg-warning/20 px-3 py-1 text-sm font-medium text-warning">Moderate Risk</span>;
   return <span className="rounded-full bg-danger/20 px-3 py-1 text-sm font-medium text-danger">High Risk</span>;
+}
+
+function ScoreBar({ label, value, weight }: { label: string; value: number; weight: string }) {
+  const color = value >= 71 ? "bg-success" : value >= 41 ? "bg-warning" : "bg-danger";
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between text-sm">
+        <span className="text-muted-foreground">{label} ({weight})</span>
+        <span className="font-medium">{value}/100</span>
+      </div>
+      <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
+        <div className={`h-full rounded-full transition-all duration-700 ${color}`} style={{ width: `${value}%` }} />
+      </div>
+    </div>
+  );
+}
+
+/* ───── Haversine distance (meters) ───── */
+function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 /* ───── Location Analysis Tab ───── */
@@ -37,31 +77,42 @@ function LocationTab({ data }: { data: any }) {
   const mapRef = useRef<any>(null);
   const [competitors, setCompetitors] = useState<any[]>([]);
   const [vacants, setVacants] = useState<any[]>([]);
+  const [crimes, setCrimes] = useState<any[]>([]);
+  const [ctaStations, setCtaStations] = useState<{ name: string; walkMin: number }[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const lat = 41.8827;
-  const lng = -87.6233;
+  const [lat, lng] = getCoords(data);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Fetch competitors from Chicago Open Data
         const typeMap: Record<string, string> = {
-          Restaurant: "RETAIL FOOD",
-          Retail: "RETAIL",
-          Salon: "BEAUTY SALON",
-          Office: "OFFICE",
+          Restaurant: "RETAIL FOOD", Retail: "RETAIL", Salon: "BEAUTY SALON",
+          "Coffee Shop": "RETAIL FOOD", Bar: "LIQUOR", Gym: "LIMITED BUSINESS LICENSE",
         };
         const licenseType = typeMap[data.type] || "RETAIL";
-        const competitorUrl = `https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=within_circle(location,${lat},${lng},500)&$limit=50&license_description=${encodeURIComponent(licenseType)}`;
-        const vacantUrl = `https://data.cityofchicago.org/resource/7nii-7srd.json?$where=within_circle(location,${lat},${lng},500)&$limit=50`;
+        const sixMonthsAgo = new Date();
+        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+        const dateStr = sixMonthsAgo.toISOString().split("T")[0];
 
-        const [compRes, vacRes] = await Promise.all([
-          fetch(competitorUrl).then(r => r.ok ? r.json() : []),
-          fetch(vacantUrl).then(r => r.ok ? r.json() : []),
+        const [compRes, vacRes, crimeRes, ctaRes] = await Promise.all([
+          fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=within_circle(location,${lat},${lng},500)&$limit=50&license_description=${encodeURIComponent(licenseType)}`).then(r => r.ok ? r.json() : []),
+          fetch(`https://data.cityofchicago.org/resource/7nii-7srd.json?$where=within_circle(location,${lat},${lng},500)&$limit=50`).then(r => r.ok ? r.json() : []),
+          fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=within_circle(location,${lat},${lng},500) AND date>'${dateStr}'&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
+          fetch(`https://data.cityofchicago.org/resource/8mj8-j3c4.json`).then(r => r.ok ? r.json() : []),
         ]);
         setCompetitors(compRes);
         setVacants(vacRes);
+        setCrimes(crimeRes);
+
+        // Calculate nearest 3 CTA stations
+        const withDist = ctaRes.map((s: any) => {
+          const sLat = parseFloat(s.location?.latitude || s.latitude || "0");
+          const sLng = parseFloat(s.location?.longitude || s.longitude || "0");
+          const dist = haversine(lat, lng, sLat, sLng);
+          return { name: s.station_name || s.stationname || "Unknown", walkMin: Math.round(dist / 80) };
+        }).sort((a: any, b: any) => a.walkMin - b.walkMin).slice(0, 3);
+        setCtaStations(withDist);
       } catch (e) {
         console.error("Failed to fetch location data:", e);
       } finally {
@@ -69,16 +120,14 @@ function LocationTab({ data }: { data: any }) {
       }
     };
     fetchData();
-  }, [data.type]);
+  }, [data.type, lat, lng]);
 
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return;
-
     const token = import.meta.env.VITE_MAPBOX_TOKEN;
     if (!token) return;
 
     import("mapbox-gl").then((mapboxgl) => {
-      import("mapbox-gl/dist/mapbox-gl.css");
       (mapboxgl as any).accessToken = token;
 
       const map = new mapboxgl.Map({
@@ -88,37 +137,55 @@ function LocationTab({ data }: { data: any }) {
         zoom: 14,
       });
       mapRef.current = map;
-
       map.addControl(new mapboxgl.NavigationControl(), "top-right");
 
-      // Add competitor markers (red)
-      competitors.forEach((c: any) => {
-        const cLat = c.latitude || c.location?.latitude;
-        const cLng = c.longitude || c.location?.longitude;
-        if (!cLat || !cLng) return;
-        const el = document.createElement("div");
-        el.style.cssText = "width:12px;height:12px;background:#ef4444;border-radius:50%;border:2px solid #fff;cursor:pointer;";
-        new mapboxgl.Marker({ element: el })
-          .setLngLat([parseFloat(cLng), parseFloat(cLat)])
-          .setPopup(new mapboxgl.Popup({ offset: 10 }).setHTML(
-            `<div style="color:#000;font-size:12px;"><strong>${c.doing_business_as_name || c.legal_name || "Competitor"}</strong><br/>${c.address || ""}</div>`
-          ))
-          .addTo(map);
-      });
+      map.on("load", () => {
+        // Red = competitors
+        competitors.forEach((c: any) => {
+          const cLat = c.latitude || c.location?.latitude;
+          const cLng = c.longitude || c.location?.longitude;
+          if (!cLat || !cLng) return;
+          const el = document.createElement("div");
+          el.style.cssText = "width:12px;height:12px;background:#ef4444;border-radius:50%;border:2px solid #fff;cursor:pointer;";
+          new mapboxgl.Marker({ element: el })
+            .setLngLat([parseFloat(cLng), parseFloat(cLat)])
+            .setPopup(new mapboxgl.Popup({ offset: 10 }).setHTML(
+              `<div style="color:#000;font-size:12px;"><strong>${c.doing_business_as_name || c.legal_name || "Competitor"}</strong><br/>${c.address || ""}</div>`
+            ))
+            .addTo(map);
+        });
 
-      // Add vacant storefront markers (green)
-      vacants.forEach((v: any) => {
-        const vLat = v.latitude || v.location?.latitude;
-        const vLng = v.longitude || v.location?.longitude;
-        if (!vLat || !vLng) return;
-        const el = document.createElement("div");
-        el.style.cssText = "width:12px;height:12px;background:#22c55e;border-radius:50%;border:2px solid #fff;cursor:pointer;";
-        new mapboxgl.Marker({ element: el })
-          .setLngLat([parseFloat(vLng), parseFloat(vLat)])
-          .setPopup(new mapboxgl.Popup({ offset: 10 }).setHTML(
-            `<div style="color:#000;font-size:12px;"><strong>Vacant Storefront</strong><br/>${v.property_address || v.address || ""}</div>`
-          ))
-          .addTo(map);
+        // Green = vacant storefronts (click opens LoopNet)
+        vacants.forEach((v: any) => {
+          const vLat = v.latitude || v.location?.latitude;
+          const vLng = v.longitude || v.location?.longitude;
+          if (!vLat || !vLng) return;
+          const addr = `${v.address_street_number || ""} ${v.address_street_direction || ""} ${v.address_street_name || ""} ${v.address_street_suffix || ""}`.trim();
+          const el = document.createElement("div");
+          el.style.cssText = "width:12px;height:12px;background:#22c55e;border-radius:50%;border:2px solid #fff;cursor:pointer;";
+          const loopnetUrl = `https://www.loopnet.com/search/commercial-real-estate/${encodeURIComponent(addr + " Chicago IL")}/`;
+          new mapboxgl.Marker({ element: el })
+            .setLngLat([parseFloat(vLng), parseFloat(vLat)])
+            .setPopup(new mapboxgl.Popup({ offset: 10 }).setHTML(
+              `<div style="color:#000;font-size:12px;"><strong>Vacant Storefront</strong><br/>${addr}<br/><a href="${loopnetUrl}" target="_blank" style="color:#2563eb;">View on LoopNet →</a></div>`
+            ))
+            .addTo(map);
+        });
+
+        // Blue = crime incidents
+        crimes.forEach((cr: any) => {
+          const cLat = cr.latitude || cr.location?.latitude;
+          const cLng = cr.longitude || cr.location?.longitude;
+          if (!cLat || !cLng) return;
+          const el = document.createElement("div");
+          el.style.cssText = "width:10px;height:10px;background:#3b82f6;border-radius:50%;border:2px solid #fff;cursor:pointer;opacity:0.7;";
+          new mapboxgl.Marker({ element: el })
+            .setLngLat([parseFloat(cLng), parseFloat(cLat)])
+            .setPopup(new mapboxgl.Popup({ offset: 10 }).setHTML(
+              `<div style="color:#000;font-size:12px;"><strong>${cr.primary_type || "Incident"}</strong><br/>${cr.description || ""}<br/>${cr.date ? new Date(cr.date).toLocaleDateString() : ""}</div>`
+            ))
+            .addTo(map);
+        });
       });
     });
 
@@ -126,40 +193,72 @@ function LocationTab({ data }: { data: any }) {
       mapRef.current?.remove();
       mapRef.current = null;
     };
-  }, [competitors, vacants]);
+  }, [competitors, vacants, crimes, lat, lng]);
 
-  const competitionLevel = competitors.length > 20 ? "High" : competitors.length > 8 ? "Medium" : "Low";
-  const compColor = competitionLevel === "High" ? "text-danger" : competitionLevel === "Medium" ? "text-warning" : "text-success";
+  // Score calculations
+  const compScore = competitors.length <= 3 ? "🟢 Low" : competitors.length <= 8 ? "🟡 Medium" : "🔴 High";
+
+  // Crime breakdown
+  const crimeBreakdown = { Theft: 0, Assault: 0, Vandalism: 0, Other: 0 };
+  crimes.forEach((c: any) => {
+    const t = (c.primary_type || "").toUpperCase();
+    if (t.includes("THEFT") || t.includes("BURGLARY") || t.includes("ROBBERY")) crimeBreakdown.Theft++;
+    else if (t.includes("ASSAULT") || t.includes("BATTERY")) crimeBreakdown.Assault++;
+    else if (t.includes("CRIMINAL DAMAGE") || t.includes("VANDALISM")) crimeBreakdown.Vandalism++;
+    else crimeBreakdown.Other++;
+  });
+  const safetyLabel = crimes.length <= 5 ? "🟢 Very Safe" : crimes.length <= 15 ? "🟡 Moderate" : crimes.length <= 30 ? "🔴 Caution" : "🔴 High Crime Warning";
+
+  // CTA proximity score
+  const ctaScore = ctaStations.length > 0
+    ? (ctaStations[0].walkMin <= 5 ? "🟢 Excellent" : ctaStations[0].walkMin <= 10 ? "🟡 Good" : "🔴 Far")
+    : "—";
 
   return (
     <div className="space-y-4">
-      <div ref={mapContainer} className="h-[400px] w-full rounded-xl border border-border overflow-hidden" />
+      <div ref={mapContainer} style={{ minHeight: "400px" }} className="h-[400px] w-full rounded-xl border border-border overflow-hidden" />
       {loading ? (
         <div className="flex items-center justify-center py-4 gap-2 text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading location data…
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div className="rounded-xl border border-border bg-card p-5 text-center">
-            <p className="text-sm text-muted-foreground">Competitors Nearby</p>
-            <p className="text-3xl font-bold text-danger">{competitors.length}</p>
-            <p className="text-xs text-muted-foreground">within 500m</p>
+        <>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {/* Competition Score */}
+            <div className="rounded-xl border border-border bg-card p-5">
+              <p className="text-sm text-muted-foreground mb-1">Competition Score</p>
+              <p className="text-2xl font-bold">{compScore}</p>
+              <p className="text-xs text-muted-foreground">{competitors.length} competitors within 500m</p>
+            </div>
+
+            {/* Safety Score */}
+            <div className="rounded-xl border border-border bg-card p-5">
+              <p className="text-sm text-muted-foreground mb-1">Safety Score (6 mo)</p>
+              <p className="text-2xl font-bold">{safetyLabel}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Theft: {crimeBreakdown.Theft} · Assault: {crimeBreakdown.Assault} · Vandalism: {crimeBreakdown.Vandalism} · Other: {crimeBreakdown.Other}
+              </p>
+            </div>
+
+            {/* CTA Proximity */}
+            <div className="rounded-xl border border-border bg-card p-5">
+              <p className="text-sm text-muted-foreground mb-1">CTA Proximity</p>
+              <p className="text-2xl font-bold">{ctaScore}</p>
+              {ctaStations.map((s, i) => (
+                <p key={i} className="text-xs text-muted-foreground">{s.name} — {s.walkMin} min walk</p>
+              ))}
+            </div>
           </div>
-          <div className="rounded-xl border border-border bg-card p-5 text-center">
-            <p className="text-sm text-muted-foreground">Vacant Storefronts</p>
-            <p className="text-3xl font-bold text-success">{vacants.length}</p>
-            <p className="text-xs text-muted-foreground">within 500m</p>
+          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded-full bg-danger" /> Competitors</span>
+            <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded-full bg-success" /> Vacant Storefronts</span>
+            <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded-full" style={{ background: "#3b82f6" }} /> Crime Incidents</span>
           </div>
-          <div className="rounded-xl border border-border bg-card p-5 text-center">
-            <p className="text-sm text-muted-foreground">Competition Level</p>
-            <p className={`text-3xl font-bold ${compColor}`}>{competitionLevel}</p>
+          <div className="rounded-lg border border-border bg-muted/50 p-4 text-xs text-muted-foreground">
+            ℹ️ Location scores are based on real Chicago city data. Vacancy and crime data may have a 7-day delay. All metrics should be cross-verified before making business decisions.
           </div>
-        </div>
+        </>
       )}
-      <div className="flex items-center gap-4 text-xs text-muted-foreground">
-        <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded-full bg-danger" /> Competitors</span>
-        <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded-full bg-success" /> Vacant Storefronts</span>
-      </div>
     </div>
   );
 }
@@ -177,39 +276,21 @@ function AiSummaryTab({ data }: { data: any }) {
       const { data: result, error: fnError } = await supabase.functions.invoke("ai-summary", {
         body: {
           businessData: {
-            name: data.name,
-            type: data.type,
-            sellsFood: data.sellsFood,
-            sellsAlcohol: data.sellsAlcohol,
-            budget: data.budget,
-            employees: data.employees,
-            hasLocation: data.hasLocation,
-            address: data.address,
-            area: data.area,
-            targetCustomers: data.targetCustomers,
-            avgTicket: data.avgTicket,
-            dailyCustomers: data.dailyCustomers,
-            operatingHours: data.operatingHours,
-            sqft: data.sqft,
-            rentBudget: data.rentBudget,
-            launchDate: data.launchDate,
+            name: data.name, type: data.type, sellsFood: data.sellsFood, sellsAlcohol: data.sellsAlcohol,
+            budget: data.budget, employees: data.employees, hasLocation: data.hasLocation,
+            address: data.address, area: data.area, targetCustomers: data.targetCustomers,
+            avgTicket: data.avgTicket, dailyCustomers: data.dailyCustomers, operatingHours: data.operatingHours,
+            sqft: data.sqft, rentBudget: data.rentBudget, launchDate: data.launchDate,
           },
         },
       });
       if (fnError) throw fnError;
-      if (result?.error) {
-        setError(result.error);
-        toast.error(result.error);
-      } else {
-        setSummary(result.summary);
-      }
+      if (result?.error) { setError(result.error); toast.error(result.error); }
+      else { setSummary(result.summary); }
     } catch (e: any) {
       const msg = e?.message || "Failed to generate summary";
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setLoading(false);
-    }
+      setError(msg); toast.error(msg);
+    } finally { setLoading(false); }
   }, [data]);
 
   useEffect(() => { generate(); }, [generate]);
@@ -239,9 +320,7 @@ function AiSummaryTab({ data }: { data: any }) {
           <Button variant="accent" onClick={generate}>Try Again</Button>
         </div>
       ) : summary ? (
-        <div className="prose prose-invert max-w-none text-sm leading-relaxed whitespace-pre-line">
-          {summary}
-        </div>
+        <div className="prose prose-invert max-w-none text-sm leading-relaxed whitespace-pre-line">{summary}</div>
       ) : null}
     </div>
   );
@@ -253,10 +332,38 @@ export default function Report() {
   const permits = getPermits(data.type, data.sellsAlcohol);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
 
-  const budgetScore = data.budget > 50000 ? 30 : data.budget > 20000 ? 20 : 10;
-  const employeeScore = data.employees >= 3 ? 20 : 10;
-  const marketScore = data.targetCustomers.length >= 2 ? 25 : 15;
-  const viability = Math.min(100, budgetScore + employeeScore + marketScore + 15);
+  // Viability sub-scores
+  const legalScore = Math.max(0, 100 - permits.length * 10); // fewer permits = higher
+  const [lat, lng_] = getCoords(data);
+  const [compCount, setCompCount] = useState(0);
+  const [crimeCount, setCrimeCount] = useState(0);
+  const [scoresLoaded, setScoresLoaded] = useState(false);
+
+  useEffect(() => {
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    const dateStr = sixMonthsAgo.toISOString().split("T")[0];
+    const typeMap: Record<string, string> = {
+      Restaurant: "RETAIL FOOD", Retail: "RETAIL", Salon: "BEAUTY SALON",
+      "Coffee Shop": "RETAIL FOOD", Bar: "LIQUOR",
+    };
+    const lt = typeMap[data.type] || "RETAIL";
+    Promise.all([
+      fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=within_circle(location,${lat},${lng_},500)&$limit=50&license_description=${encodeURIComponent(lt)}`).then(r => r.ok ? r.json() : []),
+      fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=within_circle(location,${lat},${lng_},500) AND date>'${dateStr}'&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
+    ]).then(([comp, crime]) => {
+      setCompCount(comp.length);
+      setCrimeCount(crime.length);
+      setScoresLoaded(true);
+    });
+  }, [data.type, lat, lng_]);
+
+  const competitionScore = compCount <= 3 ? 90 : compCount <= 8 ? 60 : 25;
+  const costRange = getTotalCostRange(permits);
+  const budgetAdequacy = data.budget >= costRange.max ? 90 : data.budget >= costRange.min ? 60 : 20;
+  const safetyScore = crimeCount <= 5 ? 95 : crimeCount <= 15 ? 65 : crimeCount <= 30 ? 35 : 15;
+
+  const viability = Math.round((legalScore * 0.25) + (competitionScore * 0.25) + (budgetAdequacy * 0.25) + (safetyScore * 0.25));
 
   return (
     <div className="min-h-screen bg-background px-4 py-8">
@@ -299,6 +406,23 @@ export default function Report() {
                 <ViabilityCircle score={viability} />
                 <div className="mt-4"><RiskBadge score={viability} /></div>
               </div>
+            </div>
+
+            {/* Score breakdown */}
+            <div className="mt-6 rounded-xl border border-border bg-card p-6 space-y-4">
+              <h3 className="text-lg font-semibold">Score Breakdown</h3>
+              <ScoreBar label="Legal Complexity" value={legalScore} weight="25%" />
+              <ScoreBar label="Competition" value={competitionScore} weight="25%" />
+              <ScoreBar label="Budget Adequacy" value={budgetAdequacy} weight="25%" />
+              <ScoreBar label="Safety" value={safetyScore} weight="25%" />
+            </div>
+
+            {/* Disclaimer */}
+            <div className="mt-4 rounded-xl border border-warning/30 bg-warning/10 p-4 flex gap-3">
+              <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
+              <p className="text-sm text-muted-foreground">
+                ⚠️ Disclaimer: Bizlo's analysis is based on publicly available Chicago city data and is for informational purposes only. This is not legal or financial advice. Always verify permit requirements, costs, and location data with Chicago city departments, a licensed attorney, and a commercial real estate professional before making any business decisions.
+              </p>
             </div>
           </TabsContent>
 
