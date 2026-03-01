@@ -218,19 +218,34 @@ function LocationTab({ data }: { data: any }) {
 
         console.log(`[LocationTab] Nearest CTA:`, nearest);
 
-        // Fetch alternative suggestions — always show alternatives with independent API calls
+        // Fetch alternative suggestions — smart by business type, never suggest current area
         const currentArea = data.area || "Loop";
-        const otherAreas = Object.entries(AREA_COORDS).filter(([name]) => name !== currentArea);
         const areaReasons: Record<string, string> = {
           Loop: "High foot traffic from office workers and tourists, ideal for quick-service concepts.",
           "West Loop": "Trendy dining scene with affluent customers, great for upscale and creative businesses.",
           "River North": "Nightlife hub with high evening foot traffic, perfect for bars and entertainment.",
           "South Loop": "Growing residential area with less competition and lower rents.",
         };
+        const typeSuggestions: Record<string, string[]> = {
+          Restaurant: ["West Loop", "South Loop", "River North", "Loop"],
+          "Coffee Shop": ["West Loop", "South Loop", "River North", "Loop"],
+          Retail: ["River North", "West Loop", "Loop", "South Loop"],
+          Salon: ["River North", "South Loop", "West Loop", "Loop"],
+          Gym: ["South Loop", "West Loop", "River North", "Loop"],
+          Office: ["Loop", "West Loop", "River North", "South Loop"],
+          Bar: ["River North", "West Loop", "Loop", "South Loop"],
+          Daycare: ["South Loop", "West Loop", "Loop", "River North"],
+          Medical: ["Loop", "South Loop", "West Loop", "River North"],
+          Hotel: ["Loop", "River North", "West Loop", "South Loop"],
+        };
+        const ranked = (typeSuggestions[data.type] || ["Loop", "West Loop", "River North", "South Loop"])
+          .filter(a => a !== currentArea);
+        const suggestAreas = ranked.slice(0, 3);
 
-        console.log(`[LocationTab] Fetching independent data for ${otherAreas.length} alternative areas...`);
+        console.log(`[LocationTab] Suggesting areas for ${data.type} (current=${currentArea}): ${suggestAreas.join(", ")}`);
 
-        const suggestionPromises = otherAreas.map(async ([areaName, [aLat, aLng]]) => {
+        const suggestionPromises = suggestAreas.map(async (areaName) => {
+          const [aLat, aLng] = AREA_COORDS[areaName];
           const areaData = await fetchAreaData(aLat, aLng, data.type, areaName);
           const compScore = areaData.competitors.length <= 3 ? 90 : areaData.competitors.length <= 8 ? 60 : 25;
           const safeScore = areaData.crimes.length <= 5 ? 95 : areaData.crimes.length <= 15 ? 65 : areaData.crimes.length <= 30 ? 35 : 15;
@@ -336,7 +351,8 @@ function LocationTab({ data }: { data: any }) {
   // Score calculations from live data
   const compScore = competitors.length <= 3 ? "🟢 Low" : competitors.length <= 8 ? "🟡 Medium" : "🔴 High";
 
-  // Crime breakdown from live data
+  // Crime breakdown — only show real data, never hardcoded
+  const crimeApiFailed = crimes.length === 0 && !loading;
   const crimeBreakdown = { Theft: 0, Assault: 0, Vandalism: 0, Other: 0 };
   crimes.forEach((c: any) => {
     const t = (c.primary_type || "").toUpperCase();
@@ -345,7 +361,9 @@ function LocationTab({ data }: { data: any }) {
     else if (t.includes("CRIMINAL DAMAGE") || t.includes("VANDALISM")) crimeBreakdown.Vandalism++;
     else crimeBreakdown.Other++;
   });
-  const safetyLabel = crimes.length <= 5 ? "🟢 Very Safe" : crimes.length <= 15 ? "🟡 Moderate" : crimes.length <= 30 ? "🔴 Caution" : "🔴 High Crime Warning";
+  const safetyLabel = crimeApiFailed
+    ? "⚠️ Unavailable"
+    : crimes.length <= 5 ? "🟢 Very Safe" : crimes.length <= 15 ? "🟡 Moderate" : crimes.length <= 30 ? "🔴 Caution" : "🔴 High Risk Area";
 
   // CTA proximity score from live data
   const ctaScore = ctaStations.length > 0
@@ -373,9 +391,13 @@ function LocationTab({ data }: { data: any }) {
             <div className="rounded-xl border border-border bg-card p-5">
               <p className="text-sm text-muted-foreground mb-1">Safety Score (6 mo)</p>
               <p className="text-2xl font-bold">{safetyLabel}</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Theft: {crimeBreakdown.Theft} · Assault: {crimeBreakdown.Assault} · Vandalism: {crimeBreakdown.Vandalism} · Other: {crimeBreakdown.Other}
-              </p>
+              {crimeApiFailed ? (
+                <p className="text-xs text-muted-foreground mt-1">⚠️ Safety data temporarily unavailable. Exercise general urban caution and verify locally.</p>
+              ) : (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Theft: {crimeBreakdown.Theft} · Assault: {crimeBreakdown.Assault} · Vandalism: {crimeBreakdown.Vandalism} · Other: {crimeBreakdown.Other}
+                </p>
+              )}
             </div>
 
             {/* CTA Proximity */}
