@@ -13,10 +13,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
+import { useMapboxToken, getMapboxToken } from "@/hooks/useMapboxToken";
 
 /* ───── Geocode address to real coordinates ───── */
 async function geocodeAddress(address: string): Promise<[number, number]> {
-  const token = import.meta.env.VITE_MAPBOX_TOKEN;
+  const token = await getMapboxToken();
   if (!token || !address) return [41.8827, -87.6233]; // Chicago fallback
   try {
     const res = await fetch(
@@ -32,7 +33,7 @@ async function geocodeAddress(address: string): Promise<[number, number]> {
 
 /* ───── Reverse geocode to get neighborhood name ───── */
 async function reverseGeocode(lat: number, lng: number): Promise<string> {
-  const token = import.meta.env.VITE_MAPBOX_TOKEN;
+  const token = await getMapboxToken();
   if (!token) return "Nearby Area";
   try {
     // First try neighborhood-level only
@@ -262,6 +263,7 @@ interface AreaSuggestion {
 function LocationTab({ data }: { data: any }) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
+  const mapboxToken = useMapboxToken();
   const [competitors, setCompetitors] = useState<any[]>([]);
   const [vacants, setVacants] = useState<any[]>([]);
   const [crimes, setCrimes] = useState<any[]>([]);
@@ -401,13 +403,11 @@ function LocationTab({ data }: { data: any }) {
     fetchData();
   }, [data.type, coords, lat, lng]);
 
-  // Initialize Mapbox map with static import
+  // Initialize Mapbox map with token from edge function
   useEffect(() => {
-    if (!mapContainer.current || mapRef.current) return;
-    const token = import.meta.env.VITE_MAPBOX_TOKEN;
-    if (!token) return;
+    if (!mapContainer.current || mapRef.current || !mapboxToken) return;
 
-    mapboxgl.accessToken = token;
+    mapboxgl.accessToken = mapboxToken;
 
     const map = new mapboxgl.Map({
       container: mapContainer.current,
@@ -469,7 +469,7 @@ function LocationTab({ data }: { data: any }) {
       map.remove();
       mapRef.current = null;
     };
-  }, [competitors, vacants, crimes, lat, lng]);
+  }, [mapboxToken, competitors, vacants, crimes, lat, lng]);
 
   // Score calculations from live data
   const compScore = compDensityLabel(competitors.length);

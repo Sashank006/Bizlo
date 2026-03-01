@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { MapPin, Loader2 } from "lucide-react";
+import { useMapboxToken } from "@/hooks/useMapboxToken";
 
 interface AddressAutocompleteProps {
   value: string;
@@ -22,6 +23,7 @@ export default function AddressAutocomplete({ value, onChange, placeholder, clas
   const [loading, setLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const containerRef = useRef<HTMLDivElement>(null);
+  const mapboxToken = useMapboxToken();
 
   // Sync external value
   useEffect(() => { setQuery(value); }, [value]);
@@ -37,12 +39,11 @@ export default function AddressAutocomplete({ value, onChange, placeholder, clas
 
   const fetchSuggestions = useCallback(async (text: string) => {
     if (text.length < 3) { setSuggestions([]); return; }
-    const token = import.meta.env.VITE_MAPBOX_TOKEN;
-    if (!token) return;
+    if (!mapboxToken) return;
     setLoading(true);
     try {
       const res = await fetch(
-        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(text)}.json?access_token=${token}&country=us&bbox=-87.94,41.64,-87.52,42.02&types=address&limit=5`
+        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(text)}.json?access_token=${mapboxToken}&country=us&bbox=-87.94,41.64,-87.52,42.02&types=address&limit=5`
       );
       if (!res.ok) return;
       const data = await res.json();
@@ -55,7 +56,7 @@ export default function AddressAutocomplete({ value, onChange, placeholder, clas
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [mapboxToken]);
 
   const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value.slice(0, 200);
