@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Plus, LogOut, Building2, Settings, Key, Trash2 } from "lucide-react";
+import { Plus, LogOut, Building2, Settings, Pencil, Trash2 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useBusiness, defaultBusinessData } from "@/contexts/BusinessContext";
@@ -48,6 +48,11 @@ export default function Dashboard() {
     toast.success("Business deleted");
   };
 
+  const handleEdit = (b: typeof businesses[0]) => {
+    setData(b);
+    navigate("/questionnaire");
+  };
+
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     navigate("/");
@@ -66,14 +71,18 @@ export default function Dashboard() {
         <div className="flex-1 space-y-1">
           <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">Your Businesses</p>
           {businesses.map((b, i) => (
-            <button
-              key={b.id || i}
-              onClick={() => { setData(b); navigate("/report"); }}
-              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-secondary-foreground transition-colors hover:bg-secondary"
-            >
-              <Building2 className="h-4 w-4 text-muted-foreground" />
-              <span className="truncate">{b.name || "Untitled"}</span>
-            </button>
+            <div key={b.id || i} className="flex w-full items-center gap-1 rounded-lg px-3 py-2 text-sm text-secondary-foreground transition-colors hover:bg-secondary">
+              <button
+                onClick={() => { setData(b); navigate("/report"); }}
+                className="flex flex-1 items-center gap-3 text-left truncate"
+              >
+                <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span className="truncate">{b.name || "Untitled"}</span>
+              </button>
+              <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary" onClick={(e) => { e.stopPropagation(); handleEdit(b); }}>
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           ))}
           {businesses.length === 0 && (
             <p className="px-3 text-sm text-muted-foreground">No businesses yet</p>
@@ -97,8 +106,7 @@ export default function Dashboard() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem><Settings className="mr-2 h-4 w-4" /> Settings</DropdownMenuItem>
-                <DropdownMenuItem><Key className="mr-2 h-4 w-4" /> Change Password</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate("/settings")}><Settings className="mr-2 h-4 w-4" /> Settings</DropdownMenuItem>
                 <DropdownMenuItem onClick={handleSignOut} className="text-destructive"><LogOut className="mr-2 h-4 w-4" /> Sign Out</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -138,12 +146,16 @@ export default function Dashboard() {
                     </div>
                   </button>
                   {b.id && (
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive shrink-0">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </AlertDialogTrigger>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary" onClick={() => handleEdit(b)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive shrink-0">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
                           <AlertDialogTitle>Delete "{b.name}"?</AlertDialogTitle>
@@ -159,6 +171,7 @@ export default function Dashboard() {
                         </AlertDialogFooter>
                       </AlertDialogContent>
                     </AlertDialog>
+                    </div>
                   )}
                 </div>
               ))}

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { generateReport } from "@/lib/generatePdf";
 import { Link } from "react-router-dom";
 import { useBusiness } from "@/contexts/BusinessContext";
@@ -7,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, ExternalLink, Download, Sparkles, Loader2, RefreshCw, AlertTriangle, MapPin } from "lucide-react";
+import { ArrowLeft, ExternalLink, Download, Sparkles, Loader2, RefreshCw, AlertTriangle, MapPin, Pencil } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import mapboxgl from "mapbox-gl";
@@ -628,7 +629,8 @@ function AiSummaryTab({ data }: { data: any }) {
 
 /* ───── Main Report ───── */
 export default function Report() {
-  const { data } = useBusiness();
+  const navigate = useNavigate();
+  const { data, setData } = useBusiness();
   const permits = getPermits(data.type, data.sellsAlcohol, data.sqft);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
 
@@ -694,10 +696,13 @@ export default function Report() {
       <div className="mx-auto max-w-4xl">
         <div className="mb-6 flex items-center gap-4">
           <Button variant="ghost" size="icon" asChild><Link to="/dashboard"><ArrowLeft className="h-5 w-5" /></Link></Button>
-          <div>
+          <div className="flex-1">
             <h1 className="text-2xl font-bold">{data.name || "Business Report"}</h1>
             <p className="text-sm text-muted-foreground">{data.type} • {data.hasLocation ? data.address : data.area}</p>
           </div>
+          <Button variant="outline" size="sm" onClick={() => navigate("/questionnaire")}>
+            <Pencil className="mr-2 h-4 w-4" /> Edit
+          </Button>
         </div>
 
         <Tabs defaultValue="overview" className="space-y-6">
