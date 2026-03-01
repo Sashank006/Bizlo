@@ -13,16 +13,34 @@ import { toast } from "sonner";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 
-/* ───── Area center coordinates ───── */
-const AREA_COORDS: Record<string, [number, number]> = {
-  Loop: [41.8827, -87.6233],
-  "West Loop": [41.8819, -87.6464],
-  "River North": [41.8926, -87.6333],
-  "South Loop": [41.8676, -87.6270],
-};
+/* ───── Geocode address to real coordinates ───── */
+async function geocodeAddress(address: string): Promise<[number, number]> {
+  const token = import.meta.env.VITE_MAPBOX_TOKEN;
+  if (!token || !address) return [41.8827, -87.6233]; // Chicago fallback
+  try {
+    const res = await fetch(
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(address)}.json?access_token=${token}&country=us&limit=1`
+    );
+    if (!res.ok) return [41.8827, -87.6233];
+    const data = await res.json();
+    const coords = data.features?.[0]?.center;
+    if (coords) return [coords[1], coords[0]]; // [lat, lng]
+  } catch { /* fallback */ }
+  return [41.8827, -87.6233];
+}
 
-function getCoords(data: any): [number, number] {
-  return AREA_COORDS[data.area] || AREA_COORDS.Loop;
+/* ───── Reverse geocode to get street/neighborhood name ───── */
+async function reverseGeocode(lat: number, lng: number): Promise<string> {
+  const token = import.meta.env.VITE_MAPBOX_TOKEN;
+  if (!token) return `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
+  try {
+    const res = await fetch(
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${token}&types=neighborhood,locality&limit=1`
+    );
+    if (!res.ok) return `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
+    const data = await res.json();
+    return data.features?.[0]?.text || `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
+  } catch { return `${lat.toFixed(3)}, ${lng.toFixed(3)}`; }
 }
 
 /* ───── Market Fit Score ───── */
@@ -123,17 +141,12 @@ async function fetchAreaData(lat: number, lng: number, businessType: string, are
   const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString();
   const dateStr = sixMonthsAgo.split("T")[0];
 
-  console.log(`[fetchAreaData] area=${areaLabel} lat=${lat} lng=${lng} type=${licenseType}`);
-
   const [compRes, crimeRes, ctaRes] = await Promise.all([
     fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=within_circle(location,${lat},${lng},500)&$limit=50&license_description=${encodeURIComponent(licenseType)}`).then(r => r.ok ? r.json() : []),
-    fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=within_circle(location,${lat},${lng},500) AND date>'${dateStr}'&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
+    fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=within_circle(location,${lat},${lng},250) AND date>'${dateStr}'&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
     fetch(`https://data.cityofchicago.org/resource/8mj8-j3c4.json`).then(r => r.ok ? r.json() : []),
   ]);
 
-  console.log(`[fetchAreaData] area=${areaLabel} competitors=${compRes.length} crimes=${crimeRes.length} ctaStations=${ctaRes.length}`);
-
-  // Deduplicate CTA stations by station_name, use GeoJSON coordinates
   const stationMap = new Map<string, { name: string; walkMin: number }>();
   ctaRes.forEach((s: any) => {
     const coords = s.location?.coordinates;
@@ -146,8 +159,6 @@ async function fetchAreaData(lat: number, lng: number, businessType: string, are
     stationMap.set(name, { name, walkMin: Math.round(dist / 80) });
   });
   const ctaStations = Array.from(stationMap.values()).sort((a, b) => a.walkMin - b.walkMin).slice(0, 3);
-
-  console.log(`[fetchAreaData] area=${areaLabel} nearestCTA=${ctaStations[0]?.name || "none"} walkMin=${ctaStations[0]?.walkMin || "N/A"}`);
 
   return { competitors: compRes, crimes: crimeRes, ctaStations };
 }
@@ -176,10 +187,20 @@ function LocationTab({ data }: { data: any }) {
   const [ctaStations, setCtaStations] = useState<{ name: string; walkMin: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [suggestions, setSuggestions] = useState<AreaSuggestion[]>([]);
+  const [coords, setCoords] = useState<[number, number] | null>(null);
+  const [allComparable, setAllComparable] = useState(false);
 
-  const [lat, lng] = getCoords(data);
+  // Geocode user's actual address
+  useEffect(() => {
+    const addr = data.hasLocation ? data.address : data.area;
+    geocodeAddress(addr || "Chicago, IL").then(c => setCoords(c));
+  }, [data.address, data.area, data.hasLocation]);
+
+  const lat = coords?.[0] ?? 41.8827;
+  const lng = coords?.[1] ?? -87.6233;
 
   useEffect(() => {
+    if (!coords) return;
     const fetchData = async () => {
       try {
         const typeMap: Record<string, string> = {
@@ -190,73 +211,69 @@ function LocationTab({ data }: { data: any }) {
         const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString();
         const dateStr = sixMonthsAgo.split("T")[0];
 
-        console.log(`[LocationTab] Fetching live data for lat=${lat} lng=${lng} type=${licenseType} since=${dateStr}`);
-
         const [compRes, vacRes, crimeRes, ctaRes] = await Promise.all([
           fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=within_circle(location,${lat},${lng},500)&$limit=50&license_description=${encodeURIComponent(licenseType)}`).then(r => r.ok ? r.json() : []),
           fetch(`https://data.cityofchicago.org/resource/7nii-7srd.json?$where=within_circle(location,${lat},${lng},500)&$limit=50`).then(r => r.ok ? r.json() : []),
-          fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=within_circle(location,${lat},${lng},500) AND date>'${dateStr}'&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
+          fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=within_circle(location,${lat},${lng},250) AND date>'${dateStr}'&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
           fetch(`https://data.cityofchicago.org/resource/8mj8-j3c4.json`).then(r => r.ok ? r.json() : []),
         ]);
-
-        console.log(`[LocationTab] Raw results — competitors: ${compRes.length}, vacants: ${vacRes.length}, crimes: ${crimeRes.length}, ctaStations: ${ctaRes.length}`);
 
         setCompetitors(compRes);
         setVacants(vacRes);
         setCrimes(crimeRes);
 
-        // Deduplicate CTA stations by station_name, use GeoJSON coordinates [lng, lat]
         const stationMap = new Map<string, { name: string; walkMin: number }>();
         ctaRes.forEach((s: any) => {
-          const coords = s.location?.coordinates;
-          if (!coords || coords.length < 2) return;
-          const sLat = coords[1];
-          const sLng = coords[0];
+          const coords_ = s.location?.coordinates;
+          if (!coords_ || coords_.length < 2) return;
           const name = s.station_name || "Unknown";
           if (stationMap.has(name)) return;
-          const dist = haversine(lat, lng, sLat, sLng);
+          const dist = haversine(lat, lng, coords_[1], coords_[0]);
           stationMap.set(name, { name, walkMin: Math.round(dist / 80) });
         });
         const nearest = Array.from(stationMap.values()).sort((a, b) => a.walkMin - b.walkMin).slice(0, 3);
         setCtaStations(nearest);
 
-        console.log(`[LocationTab] Nearest CTA:`, nearest);
+        // Main location scores for comparison
+        const mainCompScore = compRes.length <= 3 ? 90 : compRes.length <= 8 ? 60 : 25;
+        const mainSafeScore = crimeRes.length <= 15 ? 90 : crimeRes.length <= 30 ? 50 : 20;
+        const mainCtaScore = nearest.length > 0 ? (nearest[0].walkMin <= 5 ? 90 : nearest[0].walkMin <= 10 ? 70 : 40) : 40;
+        const mainOverall = Math.round((mainCompScore + mainSafeScore + mainCtaScore) / 3);
 
-        // Fetch alternative suggestions — coordinate-based directions from user's actual location
+        // Coordinate-based directional suggestions
         const directions: { label: string; dLat: number; dLng: number }[] = [
-          { label: "North", dLat: 0.02, dLng: 0 },
-          { label: "South", dLat: -0.02, dLng: 0 },
-          { label: "East", dLat: 0, dLng: 0.02 },
-          { label: "West", dLat: 0, dLng: -0.02 },
+          { label: "North", dLat: 0.018, dLng: 0 },
+          { label: "South", dLat: -0.018, dLng: 0 },
+          { label: "East", dLat: 0, dLng: 0.025 },
+          { label: "West", dLat: 0, dLng: -0.025 },
         ];
 
-        console.log(`[LocationTab] Fetching directional suggestions from lat=${lat} lng=${lng}`);
-
-        const suggestionPromises = directions.map(async (dir) => {
+        const suggestionResults = await Promise.all(directions.map(async (dir) => {
           const sLat = lat + dir.dLat;
           const sLng = lng + dir.dLng;
           const distM = haversine(lat, lng, sLat, sLng);
           const distKm = Math.round(distM / 100) / 10;
-          const areaData = await fetchAreaData(sLat, sLng, data.type, `${distKm}km ${dir.label}`);
+
+          const [areaData, streetName] = await Promise.all([
+            fetchAreaData(sLat, sLng, data.type, dir.label),
+            reverseGeocode(sLat, sLng),
+          ]);
+
           const compScore_ = areaData.competitors.length <= 3 ? 90 : areaData.competitors.length <= 8 ? 60 : 25;
-          const safeScore_ = areaData.crimes.length <= 5 ? 95 : areaData.crimes.length <= 15 ? 65 : areaData.crimes.length <= 30 ? 35 : 15;
+          const safeScore_ = areaData.crimes.length <= 15 ? 90 : areaData.crimes.length <= 30 ? 50 : 20;
           const ctaScore_ = areaData.ctaStations.length > 0
             ? (areaData.ctaStations[0].walkMin <= 5 ? 90 : areaData.ctaStations[0].walkMin <= 10 ? 70 : 40)
             : 40;
           const overall = Math.round((compScore_ + safeScore_ + ctaScore_) / 3);
 
-          // Compare to main location
-          const mainCompScore = compRes.length <= 3 ? 90 : compRes.length <= 8 ? 60 : 25;
-          const mainSafeScore = crimeRes.length <= 5 ? 95 : crimeRes.length <= 15 ? 65 : crimeRes.length <= 30 ? 35 : 15;
           let reason = "";
           if (compScore_ > mainCompScore) reason += "Less competition. ";
           if (safeScore_ > mainSafeScore) reason += "Safer area. ";
-          if (areaData.ctaStations.length > 0 && areaData.ctaStations[0].walkMin <= 5) reason += "Excellent transit access. ";
+          if (ctaScore_ > mainCtaScore) reason += "Better transit access. ";
           if (!reason) reason = "Comparable to your current location.";
 
-          console.log(`[Suggestion] ${distKm}km ${dir.label}: comp=${areaData.competitors.length} crime=${areaData.crimes.length} cta=${areaData.ctaStations[0]?.walkMin || 'N/A'}min overall=${overall}`);
           return {
-            area: `${distKm}km ${dir.label}`,
+            area: `${distKm}km ${dir.label} · ${streetName}`,
             compCount: areaData.competitors.length,
             crimeCount: areaData.crimes.length,
             ctaMin: areaData.ctaStations[0]?.walkMin || 99,
@@ -267,9 +284,17 @@ function LocationTab({ data }: { data: any }) {
             lat: sLat,
             lng: sLng,
           };
-        });
-        const results = await Promise.all(suggestionPromises);
-        setSuggestions(results.sort((a, b) => b.score - a.score).slice(0, 3));
+        }));
+
+        // Only show suggestions that score better than current location
+        const betterOnes = suggestionResults.filter(s => s.score > mainOverall).sort((a, b) => b.score - a.score).slice(0, 3);
+        if (betterOnes.length === 0) {
+          setAllComparable(true);
+          setSuggestions([]);
+        } else {
+          setAllComparable(false);
+          setSuggestions(betterOnes);
+        }
       } catch (e) {
         console.error("Failed to fetch location data:", e);
       } finally {
@@ -277,7 +302,7 @@ function LocationTab({ data }: { data: any }) {
       }
     };
     fetchData();
-  }, [data.type, data.area, lat, lng]);
+  }, [data.type, coords, lat, lng]);
 
   // Initialize Mapbox map with static import
   useEffect(() => {
@@ -356,19 +381,11 @@ function LocationTab({ data }: { data: any }) {
   // Score calculations from live data
   const compScore = competitors.length <= 3 ? "🟢 Low" : competitors.length <= 8 ? "🟡 Medium" : "🔴 High";
 
-  // Crime breakdown — only show real data, never hardcoded
+  // Safety — 250m radius, risk level only, no breakdown
   const crimeApiFailed = crimes.length === 0 && !loading;
-  const crimeBreakdown = { Theft: 0, Assault: 0, Vandalism: 0, Other: 0 };
-  crimes.forEach((c: any) => {
-    const t = (c.primary_type || "").toUpperCase();
-    if (t.includes("THEFT") || t.includes("BURGLARY") || t.includes("ROBBERY")) crimeBreakdown.Theft++;
-    else if (t.includes("ASSAULT") || t.includes("BATTERY")) crimeBreakdown.Assault++;
-    else if (t.includes("CRIMINAL DAMAGE") || t.includes("VANDALISM")) crimeBreakdown.Vandalism++;
-    else crimeBreakdown.Other++;
-  });
   const safetyLabel = crimeApiFailed
     ? "⚠️ Unavailable"
-    : crimes.length <= 5 ? "🟢 Very Safe" : crimes.length <= 15 ? "🟡 Moderate" : crimes.length <= 30 ? "🔴 Caution" : "🔴 High Risk Area";
+    : crimes.length < 15 ? "🟢 Low Risk" : crimes.length <= 30 ? "🟡 Medium Risk" : "🔴 High Risk";
 
   // CTA proximity score from live data
   const ctaScore = ctaStations.length > 0
@@ -385,27 +402,22 @@ function LocationTab({ data }: { data: any }) {
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-3">
-            {/* Competition Score */}
             <div className="rounded-xl border border-border bg-card p-5">
               <p className="text-sm text-muted-foreground mb-1">Competition Score</p>
               <p className="text-2xl font-bold">{compScore}</p>
               <p className="text-xs text-muted-foreground">{competitors.length} competitors within 500m</p>
             </div>
 
-            {/* Safety Score */}
             <div className="rounded-xl border border-border bg-card p-5">
-              <p className="text-sm text-muted-foreground mb-1">Safety Score (6 mo)</p>
+              <p className="text-sm text-muted-foreground mb-1">Safety Risk Level</p>
               <p className="text-2xl font-bold">{safetyLabel}</p>
               {crimeApiFailed ? (
                 <p className="text-xs text-muted-foreground mt-1">⚠️ Safety data temporarily unavailable. Exercise general urban caution and verify locally.</p>
               ) : (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Theft: {crimeBreakdown.Theft} · Assault: {crimeBreakdown.Assault} · Vandalism: {crimeBreakdown.Vandalism} · Other: {crimeBreakdown.Other}
-                </p>
+                <p className="text-xs text-muted-foreground mt-1">Based on historical Chicago crime data (250m radius, 6 months)</p>
               )}
             </div>
 
-            {/* CTA Proximity */}
             <div className="rounded-xl border border-border bg-card p-5">
               <p className="text-sm text-muted-foreground mb-1">CTA Proximity</p>
               <p className="text-2xl font-bold">{ctaScore}</p>
@@ -420,28 +432,33 @@ function LocationTab({ data }: { data: any }) {
             <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded-full" style={{ background: "#3b82f6" }} /> Crime Incidents</span>
           </div>
 
-          {/* Location Suggestions — coordinate-based nearby areas */}
+          {/* Alternative Location Suggestions */}
+          {allComparable && (
+            <div className="rounded-xl border border-border bg-card p-5 text-center">
+              <p className="text-sm text-muted-foreground">✅ Your chosen location is competitive with nearby alternatives.</p>
+            </div>
+          )}
           {suggestions.length > 0 && (
             <div className="space-y-3">
               <h3 className="text-lg font-semibold flex items-center gap-2">
                 <MapPin className="h-5 w-5 text-primary" />
-                Nearby Alternative Locations
+                Better Nearby Alternatives
               </h3>
               <div className="grid gap-4 sm:grid-cols-3">
                 {suggestions.map((s) => {
                   const compLabel = s.compCount <= 3 ? "🟢 Low" : s.compCount <= 8 ? "🟡 Medium" : "🔴 High";
-                  const safeLabel = s.crimeCount <= 5 ? "🟢 Very Safe" : s.crimeCount <= 15 ? "🟡 Moderate" : s.crimeCount <= 30 ? "🔴 Caution" : "🔴 High Crime";
+                  const safeLabel = s.crimeCount < 15 ? "🟢 Low Risk" : s.crimeCount <= 30 ? "🟡 Medium Risk" : "🔴 High Risk";
                   const scoreColor = s.score >= 71 ? "text-success" : s.score >= 41 ? "text-warning" : "text-danger";
                   return (
                     <div key={s.area} className="rounded-xl border border-border bg-card p-5 space-y-2">
                       <div className="flex items-center justify-between">
-                        <h4 className="font-semibold">{s.area}</h4>
+                        <h4 className="font-semibold text-sm">{s.area}</h4>
                         <span className={`text-xl font-bold ${scoreColor}`}>{s.score}</span>
                       </div>
                       <p className="text-xs text-muted-foreground italic">{s.reason}</p>
                       <div className="space-y-1 text-xs">
-                        <div className="flex justify-between"><span className="text-muted-foreground">Competition</span><span>{compLabel} ({s.compCount})</span></div>
-                        <div className="flex justify-between"><span className="text-muted-foreground">Safety</span><span>{safeLabel} ({s.crimeCount})</span></div>
+                        <div className="flex justify-between"><span className="text-muted-foreground">Competition</span><span>{compLabel}</span></div>
+                        <div className="flex justify-between"><span className="text-muted-foreground">Safety</span><span>{safeLabel}</span></div>
                         <div className="flex justify-between"><span className="text-muted-foreground">Nearest CTA</span><span>{s.ctaName} ({s.ctaMin} min)</span></div>
                       </div>
                     </div>
@@ -531,12 +548,19 @@ export default function Report() {
 
   // Live viability sub-scores
   const marketFitScore = calcMarketFitScore(data.type, data.area, data.targetCustomers || []);
-  const [lat, lng_] = getCoords(data);
+  const [reportCoords, setReportCoords] = useState<[number, number] | null>(null);
   const [compCount, setCompCount] = useState(0);
   const [crimeCount, setCrimeCount] = useState(0);
   const [scoresLoaded, setScoresLoaded] = useState(false);
 
   useEffect(() => {
+    const addr = data.hasLocation ? data.address : data.area;
+    geocodeAddress(addr || "Chicago, IL").then(c => setReportCoords(c));
+  }, [data.address, data.area, data.hasLocation]);
+
+  useEffect(() => {
+    if (!reportCoords) return;
+    const [rLat, rLng] = reportCoords;
     const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString();
     const dateStr = sixMonthsAgo.split("T")[0];
     const typeMap: Record<string, string> = {
@@ -545,23 +569,20 @@ export default function Report() {
     };
     const lt = typeMap[data.type] || "RETAIL";
 
-    console.log(`[Viability] Fetching live scores: lat=${lat} lng=${lng_} type=${lt} since=${dateStr}`);
-
     Promise.all([
-      fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=within_circle(location,${lat},${lng_},500)&$limit=50&license_description=${encodeURIComponent(lt)}`).then(r => r.ok ? r.json() : []),
-      fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=within_circle(location,${lat},${lng_},500) AND date>'${dateStr}'&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
+      fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=within_circle(location,${rLat},${rLng},500)&$limit=50&license_description=${encodeURIComponent(lt)}`).then(r => r.ok ? r.json() : []),
+      fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=within_circle(location,${rLat},${rLng},250) AND date>'${dateStr}'&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
     ]).then(([comp, crime]) => {
-      console.log(`[Viability] Live results — competitors: ${comp.length}, crimes: ${crime.length}`);
       setCompCount(comp.length);
       setCrimeCount(crime.length);
       setScoresLoaded(true);
     });
-  }, [data.type, lat, lng_]);
+  }, [data.type, reportCoords]);
 
   const competitionScore = compCount <= 3 ? 90 : compCount <= 8 ? 60 : 25;
   const costRange = getTotalCostRange(permits);
   const budgetAdequacy = data.budget >= costRange.max ? 90 : data.budget >= costRange.min ? 60 : 20;
-  const safetyScore = crimeCount <= 5 ? 95 : crimeCount <= 15 ? 65 : crimeCount <= 30 ? 35 : 15;
+  const safetyScore = crimeCount < 15 ? 90 : crimeCount <= 30 ? 50 : 20;
 
   const viability = Math.round((marketFitScore * 0.25) + (competitionScore * 0.25) + (budgetAdequacy * 0.25) + (safetyScore * 0.25));
 
