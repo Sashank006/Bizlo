@@ -184,16 +184,25 @@ function crimeRiskScore(count: number): number {
 
 /* ───── Fetch area data helper ───── */
 async function fetchAreaData(lat: number, lng: number, businessType: string, areaLabel: string) {
-  const typeMap: Record<string, string> = {
-    Restaurant: "RETAIL FOOD", Retail: "RETAIL", Salon: "BEAUTY SALON",
-    "Coffee Shop": "RETAIL FOOD", Bar: "LIQUOR", Gym: "LIMITED BUSINESS LICENSE",
+  const typeKeywords: Record<string, string[]> = {
+    Restaurant: ["RETAIL FOOD", "FOOD - PREP"],
+    Retail: ["RETAIL"],
+    Salon: ["BEAUTY", "BARBER", "COSMETOLOGY"],
+    "Coffee Shop": ["RETAIL FOOD", "FOOD - PREP"],
+    Bar: ["LIQUOR", "TAVERN"],
+    Gym: ["FITNESS", "HEALTH CLUB", "ATHLETIC"],
+    Daycare: ["DAY CARE", "CHILDREN"],
+    Medical: ["MEDICAL", "HEALTH"],
+    Hotel: ["HOTEL", "INN"],
+    Office: ["BUSINESS"],
   };
-  const licenseType = typeMap[businessType] || "RETAIL";
+  const keywords = typeKeywords[businessType] || ["RETAIL"];
+  const likeClause = keywords.map(k => `upper(license_description) like '%${k}%'`).join(" OR ");
   const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString();
   const dateStr = sixMonthsAgo.split("T")[0];
 
   const [compRes, crimeRes, ctaRes] = await Promise.all([
-    fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=within_circle(location,${lat},${lng},500)&$limit=50&license_description=${encodeURIComponent(licenseType)}`).then(r => r.ok ? r.json() : []),
+    fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=within_circle(location,${lat},${lng},500) AND (${likeClause})&$limit=50`).then(r => r.ok ? r.json() : []),
     fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=within_circle(location,${lat},${lng},250) AND date>'${dateStr}'&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
     fetch(`https://data.cityofchicago.org/resource/8mj8-j3c4.json`).then(r => r.ok ? r.json() : []),
   ]);
@@ -254,16 +263,25 @@ function LocationTab({ data }: { data: any }) {
     if (!coords) return;
     const fetchData = async () => {
       try {
-        const typeMap: Record<string, string> = {
-          Restaurant: "RETAIL FOOD", Retail: "RETAIL", Salon: "BEAUTY SALON",
-          "Coffee Shop": "RETAIL FOOD", Bar: "LIQUOR", Gym: "LIMITED BUSINESS LICENSE",
+        const typeKeywords: Record<string, string[]> = {
+          Restaurant: ["RETAIL FOOD", "FOOD - PREP"],
+          Retail: ["RETAIL"],
+          Salon: ["BEAUTY", "BARBER", "COSMETOLOGY"],
+          "Coffee Shop": ["RETAIL FOOD", "FOOD - PREP"],
+          Bar: ["LIQUOR", "TAVERN"],
+          Gym: ["FITNESS", "HEALTH CLUB", "ATHLETIC"],
+          Daycare: ["DAY CARE", "CHILDREN"],
+          Medical: ["MEDICAL", "HEALTH"],
+          Hotel: ["HOTEL", "INN"],
+          Office: ["BUSINESS"],
         };
-        const licenseType = typeMap[data.type] || "RETAIL";
+        const keywords = typeKeywords[data.type] || ["RETAIL"];
+        const likeClause = keywords.map(k => `upper(license_description) like '%${k}%'`).join(" OR ");
         const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString();
         const dateStr = sixMonthsAgo.split("T")[0];
 
         const [compRes, vacRes, crimeRes, ctaRes] = await Promise.all([
-          fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=within_circle(location,${lat},${lng},500)&$limit=50&license_description=${encodeURIComponent(licenseType)}`).then(r => r.ok ? r.json() : []),
+          fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=within_circle(location,${lat},${lng},500) AND (${likeClause})&$limit=50`).then(r => r.ok ? r.json() : []),
           fetch(`https://data.cityofchicago.org/resource/7nii-7srd.json?$where=within_circle(location,${lat},${lng},500)&$limit=50`).then(r => r.ok ? r.json() : []),
           fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=within_circle(location,${lat},${lng},250) AND date>'${dateStr}'&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
           fetch(`https://data.cityofchicago.org/resource/8mj8-j3c4.json`).then(r => r.ok ? r.json() : []),
@@ -606,14 +624,23 @@ export default function Report() {
     const [rLat, rLng] = reportCoords;
     const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString();
     const dateStr = sixMonthsAgo.split("T")[0];
-    const typeMap: Record<string, string> = {
-      Restaurant: "RETAIL FOOD", Retail: "RETAIL", Salon: "BEAUTY SALON",
-      "Coffee Shop": "RETAIL FOOD", Bar: "LIQUOR", Gym: "LIMITED BUSINESS LICENSE",
+    const typeKeywords: Record<string, string[]> = {
+      Restaurant: ["RETAIL FOOD", "FOOD - PREP"],
+      Retail: ["RETAIL"],
+      Salon: ["BEAUTY", "BARBER", "COSMETOLOGY"],
+      "Coffee Shop": ["RETAIL FOOD", "FOOD - PREP"],
+      Bar: ["LIQUOR", "TAVERN"],
+      Gym: ["FITNESS", "HEALTH CLUB", "ATHLETIC"],
+      Daycare: ["DAY CARE", "CHILDREN"],
+      Medical: ["MEDICAL", "HEALTH"],
+      Hotel: ["HOTEL", "INN"],
+      Office: ["BUSINESS"],
     };
-    const lt = typeMap[data.type] || "RETAIL";
+    const keywords = typeKeywords[data.type] || ["RETAIL"];
+    const likeClause = keywords.map(k => `upper(license_description) like '%${k}%'`).join(" OR ");
 
     Promise.all([
-      fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=within_circle(location,${rLat},${rLng},500)&$limit=50&license_description=${encodeURIComponent(lt)}`).then(r => r.ok ? r.json() : []),
+      fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=within_circle(location,${rLat},${rLng},500) AND (${likeClause})&$limit=50`).then(r => r.ok ? r.json() : []),
       fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=within_circle(location,${rLat},${rLng},250) AND date>'${dateStr}'&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
     ]).then(([comp, crime]) => {
       setCompCount(comp.length);
