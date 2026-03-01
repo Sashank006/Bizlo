@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { generateReport } from "@/lib/generatePdf";
 import { Link } from "react-router-dom";
 import { useBusiness } from "@/contexts/BusinessContext";
 import { getPermits, getTotalCostRange, getMaxTimeline, PERMIT_DISCLAIMER } from "@/lib/permits";
@@ -348,10 +349,12 @@ export default function Report() {
           {/* Download */}
           <TabsContent value="download">
             <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card p-12 text-center">
-              <Download className="mb-4 h-12 w-12 text-muted-foreground" />
+              <Download className="mb-4 h-12 w-12 text-primary" />
               <h3 className="mb-2 text-lg font-semibold">Download Report</h3>
-              <p className="mb-6 max-w-md text-muted-foreground">Get a PDF summary of your complete business analysis.</p>
-              <Button variant="accent" disabled>Coming Soon</Button>
+              <p className="mb-6 max-w-md text-muted-foreground">Get a PDF summary of your business overview, permits, and cost estimates.</p>
+              <Button variant="accent" onClick={() => generateReport(data, viability)}>
+                <Download className="mr-2 h-4 w-4" /> Download PDF
+              </Button>
             </div>
           </TabsContent>
         </Tabs>
