@@ -131,6 +131,26 @@ function haversine(lat1: number, lon1: number, lat2: number, lon2: number): numb
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+/* ───── Crime rate: crimes per 1,000 population ───── */
+// 250m radius circle ≈ 0.196 km². Chicago avg density ~4,600/km² → ~900 people.
+// We estimate population for the area and compute rate per 1,000.
+const EST_POP_250M = 900;
+function crimeRate(crimeCount: number): number {
+  return Math.round((crimeCount / EST_POP_250M) * 1000 * 10) / 10; // one decimal
+}
+function crimeRiskLabel(count: number): string {
+  const rate = crimeRate(count);
+  if (rate < 17) return "🟢 Low Risk";
+  if (rate <= 33) return "🟡 Medium Risk";
+  return "🔴 High Risk";
+}
+function crimeRiskScore(count: number): number {
+  const rate = crimeRate(count);
+  if (rate < 17) return 90;
+  if (rate <= 33) return 50;
+  return 20;
+}
+
 /* ───── Fetch area data helper ───── */
 async function fetchAreaData(lat: number, lng: number, businessType: string, areaLabel: string) {
   const typeMap: Record<string, string> = {
@@ -236,7 +256,7 @@ function LocationTab({ data }: { data: any }) {
 
         // Main location scores for comparison
         const mainCompScore = compRes.length <= 3 ? 90 : compRes.length <= 8 ? 60 : 25;
-        const mainSafeScore = crimeRes.length <= 15 ? 90 : crimeRes.length <= 30 ? 50 : 20;
+        const mainSafeScore = crimeRiskScore(crimeRes.length);
         const mainCtaScore = nearest.length > 0 ? (nearest[0].walkMin <= 5 ? 90 : nearest[0].walkMin <= 10 ? 70 : 40) : 40;
         const mainOverall = Math.round((mainCompScore + mainSafeScore + mainCtaScore) / 3);
 
@@ -260,7 +280,7 @@ function LocationTab({ data }: { data: any }) {
           ]);
 
           const compScore_ = areaData.competitors.length <= 3 ? 90 : areaData.competitors.length <= 8 ? 60 : 25;
-          const safeScore_ = areaData.crimes.length <= 15 ? 90 : areaData.crimes.length <= 30 ? 50 : 20;
+          const safeScore_ = crimeRiskScore(areaData.crimes.length);
           const ctaScore_ = areaData.ctaStations.length > 0
             ? (areaData.ctaStations[0].walkMin <= 5 ? 90 : areaData.ctaStations[0].walkMin <= 10 ? 70 : 40)
             : 40;
@@ -381,11 +401,11 @@ function LocationTab({ data }: { data: any }) {
   // Score calculations from live data
   const compScore = competitors.length <= 3 ? "🟢 Low" : competitors.length <= 8 ? "🟡 Medium" : "🔴 High";
 
-  // Safety — 250m radius, risk level only, no breakdown
+  // Safety — 250m radius, crime rate per 1,000 population
   const crimeApiFailed = crimes.length === 0 && !loading;
   const safetyLabel = crimeApiFailed
     ? "⚠️ Unavailable"
-    : crimes.length < 15 ? "🟢 Low Risk" : crimes.length <= 30 ? "🟡 Medium Risk" : "🔴 High Risk";
+    : crimeRiskLabel(crimes.length);
 
   // CTA proximity score from live data
   const ctaScore = ctaStations.length > 0
@@ -414,7 +434,7 @@ function LocationTab({ data }: { data: any }) {
               {crimeApiFailed ? (
                 <p className="text-xs text-muted-foreground mt-1">⚠️ Safety data temporarily unavailable. Exercise general urban caution and verify locally.</p>
               ) : (
-                <p className="text-xs text-muted-foreground mt-1">Based on historical Chicago crime data (250m radius, 6 months)</p>
+                <p className="text-xs text-muted-foreground mt-1">Crime rate: {crimeRate(crimes.length)}/1,000 pop. · Based on historical data (250m, 6 mo)</p>
               )}
             </div>
 
@@ -447,18 +467,25 @@ function LocationTab({ data }: { data: any }) {
               <div className="grid gap-4 sm:grid-cols-3">
                 {suggestions.map((s) => {
                   const compLabel = s.compCount <= 3 ? "🟢 Low" : s.compCount <= 8 ? "🟡 Medium" : "🔴 High";
-                  const safeLabel = s.crimeCount < 15 ? "🟢 Low Risk" : s.crimeCount <= 30 ? "🟡 Medium Risk" : "🔴 High Risk";
+                  const safeLabel = crimeRiskLabel(s.crimeCount);
+                  const rate = crimeRate(s.crimeCount);
                   const scoreColor = s.score >= 71 ? "text-success" : s.score >= 41 ? "text-warning" : "text-danger";
+                  // Split area into distance + name parts
+                  const [distPart, ...nameParts] = s.area.split(" · ");
+                  const neighborhoodName = nameParts.join(" · ") || distPart;
                   return (
                     <div key={s.area} className="rounded-xl border border-border bg-card p-5 space-y-2">
                       <div className="flex items-center justify-between">
-                        <h4 className="font-semibold text-sm">{s.area}</h4>
+                        <div>
+                          <h4 className="font-semibold">{neighborhoodName}</h4>
+                          <p className="text-xs text-muted-foreground">{distPart} from your location</p>
+                        </div>
                         <span className={`text-xl font-bold ${scoreColor}`}>{s.score}</span>
                       </div>
                       <p className="text-xs text-muted-foreground italic">{s.reason}</p>
                       <div className="space-y-1 text-xs">
                         <div className="flex justify-between"><span className="text-muted-foreground">Competition</span><span>{compLabel}</span></div>
-                        <div className="flex justify-between"><span className="text-muted-foreground">Safety</span><span>{safeLabel}</span></div>
+                        <div className="flex justify-between"><span className="text-muted-foreground">Safety</span><span>{safeLabel} ({rate}/1k)</span></div>
                         <div className="flex justify-between"><span className="text-muted-foreground">Nearest CTA</span><span>{s.ctaName} ({s.ctaMin} min)</span></div>
                       </div>
                     </div>
@@ -582,7 +609,7 @@ export default function Report() {
   const competitionScore = compCount <= 3 ? 90 : compCount <= 8 ? 60 : 25;
   const costRange = getTotalCostRange(permits);
   const budgetAdequacy = data.budget >= costRange.max ? 90 : data.budget >= costRange.min ? 60 : 20;
-  const safetyScore = crimeCount < 15 ? 90 : crimeCount <= 30 ? 50 : 20;
+  const safetyScore = crimeRiskScore(crimeCount);
 
   const viability = Math.round((marketFitScore * 0.25) + (competitionScore * 0.25) + (budgetAdequacy * 0.25) + (safetyScore * 0.25));
 
