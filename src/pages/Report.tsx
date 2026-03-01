@@ -498,6 +498,26 @@ function LocationTab({ data }: { data: any }) {
         </div>
       ) : (
         <>
+          {/* Your Location Scores */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="rounded-xl border border-border bg-card p-5 text-center">
+              <p className="text-sm text-muted-foreground mb-1">Competition</p>
+              <p className="text-2xl font-bold">{compScore}</p>
+              <p className="text-xs text-muted-foreground">{competitors.length} nearby</p>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-5 text-center">
+              <p className="text-sm text-muted-foreground mb-1">Safety</p>
+              <p className="text-2xl font-bold">{safetyLabel}</p>
+              <p className="text-xs text-muted-foreground">{crimes.length} incidents</p>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-5 text-center">
+              <p className="text-sm text-muted-foreground mb-1">CTA Proximity</p>
+              <p className="text-2xl font-bold">{ctaScore}</p>
+              {ctaStations.map((s, i) => (
+                <p key={i} className="text-xs text-muted-foreground">{s.name} — {s.walkMin} min walk</p>
+              ))}
+            </div>
+          </div>
           {/* Alternative Location Suggestions */}
           {suggestions.length > 0 && (
             <div className="space-y-3">
