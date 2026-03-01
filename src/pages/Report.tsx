@@ -29,17 +29,48 @@ async function geocodeAddress(address: string): Promise<[number, number]> {
   return [41.8827, -87.6233];
 }
 
-/* ───── Reverse geocode to get street/neighborhood name ───── */
+/* ───── Reverse geocode to get neighborhood name ───── */
 async function reverseGeocode(lat: number, lng: number): Promise<string> {
   const token = import.meta.env.VITE_MAPBOX_TOKEN;
   if (!token) return "Nearby Area";
   try {
+    // First try neighborhood-level only
     const res = await fetch(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${token}&types=neighborhood,locality,place&limit=1`
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${token}&types=neighborhood&limit=3`
     );
-    if (!res.ok) return "Nearby Area";
-    const data = await res.json();
-    return data.features?.[0]?.text || "Nearby Area";
+    if (res.ok) {
+      const data = await res.json();
+      // Filter out city-level names like "Chicago"
+      const name = data.features?.find((f: any) => 
+        f.text && f.text.toLowerCase() !== "chicago"
+      )?.text;
+      if (name) return name;
+    }
+    // Fallback: try locality (suburb-level)
+    const res2 = await fetch(
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${token}&types=locality&limit=3`
+    );
+    if (res2.ok) {
+      const data2 = await res2.json();
+      const name2 = data2.features?.find((f: any) =>
+        f.text && f.text.toLowerCase() !== "chicago"
+      )?.text;
+      if (name2) return name2;
+    }
+    // Last resort: get the address street name
+    const res3 = await fetch(
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${token}&types=address&limit=1`
+    );
+    if (res3.ok) {
+      const data3 = await res3.json();
+      const place = data3.features?.[0]?.place_name;
+      if (place) {
+        // Extract street from full address (e.g. "123 W Madison St, Chicago...")
+        const street = place.split(",")[0]?.replace(/^\d+\s*/, "").trim();
+        if (street) return `Near ${street}`;
+      }
+    }
+    return "Nearby Area";
   } catch { return "Nearby Area"; }
 }
 
