@@ -7,9 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, ExternalLink, Download, Sparkles, Loader2, RefreshCw, AlertTriangle } from "lucide-react";
+import { ArrowLeft, ExternalLink, Download, Sparkles, Loader2, RefreshCw, AlertTriangle, MapPin } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 
 /* ───── Area center coordinates ───── */
@@ -71,15 +72,60 @@ function haversine(lat1: number, lon1: number, lat2: number, lon2: number): numb
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+/* ───── Fetch area data helper ───── */
+async function fetchAreaData(lat: number, lng: number, businessType: string) {
+  const typeMap: Record<string, string> = {
+    Restaurant: "RETAIL FOOD", Retail: "RETAIL", Salon: "BEAUTY SALON",
+    "Coffee Shop": "RETAIL FOOD", Bar: "LIQUOR", Gym: "LIMITED BUSINESS LICENSE",
+  };
+  const licenseType = typeMap[businessType] || "RETAIL";
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+  const dateStr = sixMonthsAgo.toISOString().split("T")[0];
+
+  const [compRes, crimeRes, ctaRes] = await Promise.all([
+    fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=within_circle(location,${lat},${lng},500)&$limit=50&license_description=${encodeURIComponent(licenseType)}`).then(r => r.ok ? r.json() : []),
+    fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=within_circle(location,${lat},${lng},500) AND date>'${dateStr}'&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
+    fetch(`https://data.cityofchicago.org/resource/8mj8-j3c4.json`).then(r => r.ok ? r.json() : []),
+  ]);
+
+  // Deduplicate CTA stations by station_name, use GeoJSON coordinates
+  const stationMap = new Map<string, { name: string; walkMin: number }>();
+  ctaRes.forEach((s: any) => {
+    const coords = s.location?.coordinates;
+    if (!coords || coords.length < 2) return;
+    const sLat = coords[1];
+    const sLng = coords[0];
+    const name = s.station_name || "Unknown";
+    if (stationMap.has(name)) return;
+    const dist = haversine(lat, lng, sLat, sLng);
+    stationMap.set(name, { name, walkMin: Math.round(dist / 80) });
+  });
+  const ctaStations = Array.from(stationMap.values()).sort((a, b) => a.walkMin - b.walkMin).slice(0, 3);
+
+  return { competitors: compRes, crimes: crimeRes, ctaStations };
+}
+
+/* ───── Location Suggestion type ───── */
+interface AreaSuggestion {
+  area: string;
+  compCount: number;
+  crimeCount: number;
+  ctaMin: number;
+  reason: string;
+  score: number;
+}
+
 /* ───── Location Analysis Tab ───── */
 function LocationTab({ data }: { data: any }) {
   const mapContainer = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<any>(null);
+  const mapRef = useRef<mapboxgl.Map | null>(null);
   const [competitors, setCompetitors] = useState<any[]>([]);
   const [vacants, setVacants] = useState<any[]>([]);
   const [crimes, setCrimes] = useState<any[]>([]);
   const [ctaStations, setCtaStations] = useState<{ name: string; walkMin: number }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [suggestions, setSuggestions] = useState<AreaSuggestion[]>([]);
 
   const [lat, lng] = getCoords(data);
 
@@ -105,14 +151,54 @@ function LocationTab({ data }: { data: any }) {
         setVacants(vacRes);
         setCrimes(crimeRes);
 
-        // Calculate nearest 3 CTA stations
-        const withDist = ctaRes.map((s: any) => {
-          const sLat = parseFloat(s.location?.latitude || s.latitude || "0");
-          const sLng = parseFloat(s.location?.longitude || s.longitude || "0");
+        // Deduplicate CTA stations by station_name, use GeoJSON coordinates [lng, lat]
+        const stationMap = new Map<string, { name: string; walkMin: number }>();
+        ctaRes.forEach((s: any) => {
+          const coords = s.location?.coordinates;
+          if (!coords || coords.length < 2) return;
+          const sLat = coords[1];
+          const sLng = coords[0];
+          const name = s.station_name || "Unknown";
+          if (stationMap.has(name)) return;
           const dist = haversine(lat, lng, sLat, sLng);
-          return { name: s.station_name || s.stationname || "Unknown", walkMin: Math.round(dist / 80) };
-        }).sort((a: any, b: any) => a.walkMin - b.walkMin).slice(0, 3);
-        setCtaStations(withDist);
+          stationMap.set(name, { name, walkMin: Math.round(dist / 80) });
+        });
+        const nearest = Array.from(stationMap.values()).sort((a, b) => a.walkMin - b.walkMin).slice(0, 3);
+        setCtaStations(nearest);
+
+        // Check if suggestions needed
+        const compHigh = compRes.length > 3;
+        const crimeHigh = crimeRes.length > 15;
+        if (compHigh || crimeHigh) {
+          const currentArea = data.area || "Loop";
+          const otherAreas = Object.entries(AREA_COORDS).filter(([name]) => name !== currentArea);
+          const areaReasons: Record<string, string> = {
+            Loop: "High foot traffic from office workers and tourists, ideal for quick-service concepts.",
+            "West Loop": "Trendy dining scene with affluent customers, great for upscale and creative businesses.",
+            "River North": "Nightlife hub with high evening foot traffic, perfect for bars and entertainment.",
+            "South Loop": "Growing residential area with less competition and lower rents.",
+          };
+
+          const suggestionPromises = otherAreas.map(async ([areaName, [aLat, aLng]]) => {
+            const areaData = await fetchAreaData(aLat, aLng, data.type);
+            const compScore = areaData.competitors.length <= 3 ? 90 : areaData.competitors.length <= 8 ? 60 : 25;
+            const safeScore = areaData.crimes.length <= 5 ? 95 : areaData.crimes.length <= 15 ? 65 : areaData.crimes.length <= 30 ? 35 : 15;
+            const ctaScore = areaData.ctaStations.length > 0
+              ? (areaData.ctaStations[0].walkMin <= 5 ? 90 : areaData.ctaStations[0].walkMin <= 10 ? 70 : 40)
+              : 40;
+            const overall = Math.round((compScore + safeScore + ctaScore) / 3);
+            return {
+              area: areaName,
+              compCount: areaData.competitors.length,
+              crimeCount: areaData.crimes.length,
+              ctaMin: areaData.ctaStations[0]?.walkMin || 99,
+              reason: areaReasons[areaName] || "Alternative area with different characteristics.",
+              score: overall,
+            };
+          });
+          const results = await Promise.all(suggestionPromises);
+          setSuggestions(results.sort((a, b) => b.score - a.score).slice(0, 3));
+        }
       } catch (e) {
         console.error("Failed to fetch location data:", e);
       } finally {
@@ -120,77 +206,78 @@ function LocationTab({ data }: { data: any }) {
       }
     };
     fetchData();
-  }, [data.type, lat, lng]);
+  }, [data.type, data.area, lat, lng]);
 
+  // Initialize Mapbox map with static import
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return;
     const token = import.meta.env.VITE_MAPBOX_TOKEN;
     if (!token) return;
 
-    import("mapbox-gl").then((mapboxgl) => {
-      (mapboxgl as any).accessToken = token;
+    mapboxgl.accessToken = token;
 
-      const map = new mapboxgl.Map({
-        container: mapContainer.current!,
-        style: "mapbox://styles/mapbox/dark-v11",
-        center: [lng, lat],
-        zoom: 14,
+    const map = new mapboxgl.Map({
+      container: mapContainer.current,
+      style: "mapbox://styles/mapbox/dark-v11",
+      center: [lng, lat],
+      zoom: 14,
+    });
+    mapRef.current = map;
+    map.addControl(new mapboxgl.NavigationControl(), "top-right");
+
+    map.on("load", () => {
+      // Red = competitors
+      competitors.forEach((c: any) => {
+        const cLat = c.latitude || c.location?.latitude;
+        const cLng = c.longitude || c.location?.longitude;
+        if (!cLat || !cLng) return;
+        const el = document.createElement("div");
+        el.style.cssText = "width:12px;height:12px;background:#ef4444;border-radius:50%;border:2px solid #fff;cursor:pointer;";
+        new mapboxgl.Marker({ element: el })
+          .setLngLat([parseFloat(cLng), parseFloat(cLat)])
+          .setPopup(new mapboxgl.Popup({ offset: 10 }).setHTML(
+            `<div style="color:#000;font-size:12px;"><strong>${c.doing_business_as_name || c.legal_name || "Competitor"}</strong><br/>${c.address || ""}</div>`
+          ))
+          .addTo(map);
       });
-      mapRef.current = map;
-      map.addControl(new mapboxgl.NavigationControl(), "top-right");
 
-      map.on("load", () => {
-        // Red = competitors
-        competitors.forEach((c: any) => {
-          const cLat = c.latitude || c.location?.latitude;
-          const cLng = c.longitude || c.location?.longitude;
-          if (!cLat || !cLng) return;
-          const el = document.createElement("div");
-          el.style.cssText = "width:12px;height:12px;background:#ef4444;border-radius:50%;border:2px solid #fff;cursor:pointer;";
-          new mapboxgl.Marker({ element: el })
-            .setLngLat([parseFloat(cLng), parseFloat(cLat)])
-            .setPopup(new mapboxgl.Popup({ offset: 10 }).setHTML(
-              `<div style="color:#000;font-size:12px;"><strong>${c.doing_business_as_name || c.legal_name || "Competitor"}</strong><br/>${c.address || ""}</div>`
-            ))
-            .addTo(map);
+      // Green = vacant storefronts (click opens LoopNet)
+      vacants.forEach((v: any) => {
+        const vLat = v.latitude || v.location?.latitude;
+        const vLng = v.longitude || v.location?.longitude;
+        if (!vLat || !vLng) return;
+        const addr = `${v.address_street_number || ""} ${v.address_street_direction || ""} ${v.address_street_name || ""} ${v.address_street_suffix || ""}`.trim();
+        const el = document.createElement("div");
+        el.style.cssText = "width:12px;height:12px;background:#22c55e;border-radius:50%;border:2px solid #fff;cursor:pointer;";
+        el.addEventListener("click", () => {
+          window.open("https://www.loopnet.com/search/commercial-real-estate/chicago-il/for-lease/", "_blank");
         });
+        new mapboxgl.Marker({ element: el })
+          .setLngLat([parseFloat(vLng), parseFloat(vLat)])
+          .setPopup(new mapboxgl.Popup({ offset: 10 }).setHTML(
+            `<div style="color:#000;font-size:12px;"><strong>Vacant Storefront</strong><br/>${addr}<br/><a href="https://www.loopnet.com/search/commercial-real-estate/chicago-il/for-lease/" target="_blank" style="color:#2563eb;">View on LoopNet →</a></div>`
+          ))
+          .addTo(map);
+      });
 
-        // Green = vacant storefronts (click opens LoopNet)
-        vacants.forEach((v: any) => {
-          const vLat = v.latitude || v.location?.latitude;
-          const vLng = v.longitude || v.location?.longitude;
-          if (!vLat || !vLng) return;
-          const addr = `${v.address_street_number || ""} ${v.address_street_direction || ""} ${v.address_street_name || ""} ${v.address_street_suffix || ""}`.trim();
-          const el = document.createElement("div");
-          el.style.cssText = "width:12px;height:12px;background:#22c55e;border-radius:50%;border:2px solid #fff;cursor:pointer;";
-          const loopnetUrl = `https://www.loopnet.com/search/commercial-real-estate/${encodeURIComponent(addr + " Chicago IL")}/`;
-          new mapboxgl.Marker({ element: el })
-            .setLngLat([parseFloat(vLng), parseFloat(vLat)])
-            .setPopup(new mapboxgl.Popup({ offset: 10 }).setHTML(
-              `<div style="color:#000;font-size:12px;"><strong>Vacant Storefront</strong><br/>${addr}<br/><a href="${loopnetUrl}" target="_blank" style="color:#2563eb;">View on LoopNet →</a></div>`
-            ))
-            .addTo(map);
-        });
-
-        // Blue = crime incidents
-        crimes.forEach((cr: any) => {
-          const cLat = cr.latitude || cr.location?.latitude;
-          const cLng = cr.longitude || cr.location?.longitude;
-          if (!cLat || !cLng) return;
-          const el = document.createElement("div");
-          el.style.cssText = "width:10px;height:10px;background:#3b82f6;border-radius:50%;border:2px solid #fff;cursor:pointer;opacity:0.7;";
-          new mapboxgl.Marker({ element: el })
-            .setLngLat([parseFloat(cLng), parseFloat(cLat)])
-            .setPopup(new mapboxgl.Popup({ offset: 10 }).setHTML(
-              `<div style="color:#000;font-size:12px;"><strong>${cr.primary_type || "Incident"}</strong><br/>${cr.description || ""}<br/>${cr.date ? new Date(cr.date).toLocaleDateString() : ""}</div>`
-            ))
-            .addTo(map);
-        });
+      // Blue = crime incidents
+      crimes.forEach((cr: any) => {
+        const cLat = cr.latitude || cr.location?.latitude;
+        const cLng = cr.longitude || cr.location?.longitude;
+        if (!cLat || !cLng) return;
+        const el = document.createElement("div");
+        el.style.cssText = "width:10px;height:10px;background:#3b82f6;border-radius:50%;border:2px solid #fff;cursor:pointer;opacity:0.7;";
+        new mapboxgl.Marker({ element: el })
+          .setLngLat([parseFloat(cLng), parseFloat(cLat)])
+          .setPopup(new mapboxgl.Popup({ offset: 10 }).setHTML(
+            `<div style="color:#000;font-size:12px;"><strong>${cr.primary_type || "Incident"}</strong><br/>${cr.description || ""}<br/>${cr.date ? new Date(cr.date).toLocaleDateString() : ""}</div>`
+          ))
+          .addTo(map);
       });
     });
 
     return () => {
-      mapRef.current?.remove();
+      map.remove();
       mapRef.current = null;
     };
   }, [competitors, vacants, crimes, lat, lng]);
@@ -216,7 +303,7 @@ function LocationTab({ data }: { data: any }) {
 
   return (
     <div className="space-y-4">
-      <div ref={mapContainer} style={{ minHeight: "400px" }} className="h-[400px] w-full rounded-xl border border-border overflow-hidden" />
+      <div ref={mapContainer} style={{ height: "400px", width: "100%" }} className="rounded-xl border border-border overflow-hidden" />
       {loading ? (
         <div className="flex items-center justify-center py-4 gap-2 text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading location data…
@@ -254,6 +341,39 @@ function LocationTab({ data }: { data: any }) {
             <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded-full bg-success" /> Vacant Storefronts</span>
             <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded-full" style={{ background: "#3b82f6" }} /> Crime Incidents</span>
           </div>
+
+          {/* Location Suggestions */}
+          {suggestions.length > 0 && (
+            <div className="space-y-3">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <MapPin className="h-5 w-5 text-primary" />
+                Alternative Locations to Consider
+              </h3>
+              <div className="grid gap-4 sm:grid-cols-3">
+                {suggestions.map((s) => {
+                  const compLabel = s.compCount <= 3 ? "🟢 Low" : s.compCount <= 8 ? "🟡 Medium" : "🔴 High";
+                  const safeLabel = s.crimeCount <= 5 ? "🟢 Very Safe" : s.crimeCount <= 15 ? "🟡 Moderate" : s.crimeCount <= 30 ? "🔴 Caution" : "🔴 High Crime";
+                  const ctaLabel = s.ctaMin <= 5 ? "🟢 Excellent" : s.ctaMin <= 10 ? "🟡 Good" : "🔴 Far";
+                  const scoreColor = s.score >= 71 ? "text-success" : s.score >= 41 ? "text-warning" : "text-danger";
+                  return (
+                    <div key={s.area} className="rounded-xl border border-border bg-card p-5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-semibold">{s.area}</h4>
+                        <span className={`text-xl font-bold ${scoreColor}`}>{s.score}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{s.reason}</p>
+                      <div className="space-y-1 text-xs">
+                        <div className="flex justify-between"><span className="text-muted-foreground">Competition</span><span>{compLabel}</span></div>
+                        <div className="flex justify-between"><span className="text-muted-foreground">Safety</span><span>{safeLabel}</span></div>
+                        <div className="flex justify-between"><span className="text-muted-foreground">CTA</span><span>{ctaLabel} ({s.ctaMin} min)</span></div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="rounded-lg border border-border bg-muted/50 p-4 text-xs text-muted-foreground">
             ℹ️ Location scores are based on real Chicago city data. Vacancy and crime data may have a 7-day delay. All metrics should be cross-verified before making business decisions.
           </div>
@@ -333,7 +453,7 @@ export default function Report() {
   const [checked, setChecked] = useState<Record<string, boolean>>({});
 
   // Viability sub-scores
-  const legalScore = Math.max(0, 100 - permits.length * 10); // fewer permits = higher
+  const legalScore = Math.max(0, 100 - permits.length * 10);
   const [lat, lng_] = getCoords(data);
   const [compCount, setCompCount] = useState(0);
   const [crimeCount, setCrimeCount] = useState(0);
