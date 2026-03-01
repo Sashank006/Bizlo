@@ -28,13 +28,6 @@ your idea and location — we handle the rest.
 - Chicago Open Data Portal (business licenses, crime, CTA)
 - Groq AI (llama-3.3-70b-versatile)
 
-## Data Sources
-
-- [Chicago Business Licenses](https://data.cityofchicago.org/resource/xqx5-8hwx.json)
-- [Chicago Crime Data](https://data.cityofchicago.org/resource/ijzp-q8t2.json)
-- [Chicago Vacant Storefronts](https://data.cityofchicago.org/resource/7nii-7srd.json)
-- [CTA Station Locations](https://data.cityofchicago.org/resource/8mj8-j3c4.json)
-
 ## Built At
 
 DemonHacks 2026 — DePaul University
