@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { format } from "date-fns";
-import { CalendarIcon, ArrowLeft, ArrowRight, Check } from "lucide-react";
+import { CalendarIcon, ArrowLeft, ArrowRight, Check, LogOut, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +16,8 @@ import { useBusiness, BusinessData } from "@/contexts/BusinessContext";
 import { supabase } from "@/integrations/supabase/client";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { toast } from "sonner";
 
 const STEPS = ["Business Basics", "Location", "Target Market", "Operations", "Review & Confirm"];
 const BUSINESS_TYPES = ["Restaurant", "Retail", "Salon", "Office", "Coffee Shop", "Gym", "Daycare", "Medical", "Hotel", "Bar", "Other"];
@@ -64,8 +66,8 @@ function validateStep(step: number, data: BusinessData): Errors {
 
 export default function Questionnaire() {
   const navigate = useNavigate();
-  useRequireAuth();
-  const { data, setData } = useBusiness();
+  const { user } = useRequireAuth();
+  const { data, setData, businesses } = useBusiness();
   const [step, setStep] = useState(0);
   const [touched, setTouched] = useState(false);
 
@@ -124,11 +126,43 @@ export default function Questionnaire() {
   const show = touched;
   const progress = ((step + 1) / STEPS.length) * 100;
 
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    navigate("/");
+  };
+
   return (
     <div className="min-h-screen bg-background px-4 py-8">
       <div className="mx-auto max-w-2xl">
-        <h1 className="mb-2 text-2xl font-bold">New Business Plan</h1>
-        <p className="mb-6 text-sm text-muted-foreground">{STEPS[step]}</p>
+        {/* Header with back + profile */}
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="icon" asChild>
+              <Link to="/dashboard"><ArrowLeft className="h-5 w-5" /></Link>
+            </Button>
+            <div>
+              <h1 className="text-2xl font-bold">New Business Plan</h1>
+              <p className="text-sm text-muted-foreground">{STEPS[step]}</p>
+            </div>
+          </div>
+          {user && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="rounded-full bg-secondary">
+                  <span className="text-sm font-medium">{user.email?.[0].toUpperCase()}</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={() => navigate("/dashboard")}>
+                  <Building2 className="mr-2 h-4 w-4" /> My Businesses
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleSignOut}>
+                  <LogOut className="mr-2 h-4 w-4" /> Sign Out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
 
         <div className="mb-8 h-2 w-full overflow-hidden rounded-full bg-secondary">
           <motion.div className="h-full gradient-teal rounded-full" animate={{ width: `${progress}%` }} transition={{ duration: 0.4 }} />
