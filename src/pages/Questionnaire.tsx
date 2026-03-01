@@ -13,7 +13,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 
 const STEPS = ["Business Basics", "Location", "Target Market", "Operations", "Review & Confirm"];
-const BUSINESS_TYPES = ["Restaurant", "Retail", "Salon", "Office", "Other"];
+const BUSINESS_TYPES = ["Restaurant", "Retail", "Salon", "Office", "Coffee Shop", "Gym", "Daycare", "Medical", "Hotel", "Bar", "Other"];
 const AREAS = ["Loop", "West Loop", "River North", "South Loop"];
 const CUSTOMER_TYPES = ["Students", "Office Workers", "Tourists", "Residents"];
 

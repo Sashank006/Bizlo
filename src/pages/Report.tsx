@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { useBusiness } from "@/contexts/BusinessContext";
-import { getPermits, getTotalCost, getMaxTimeline } from "@/lib/permits";
+import { getPermits, getTotalCostRange, getMaxTimeline, PERMIT_DISCLAIMER } from "@/lib/permits";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -310,7 +310,7 @@ export default function Report() {
                   <div className="flex-1">
                     <div className="flex items-center justify-between">
                       <h4 className="font-semibold">{p.name}</h4>
-                      <span className="text-sm font-medium text-primary">{p.cost === 0 ? "Free" : `$${p.cost}`}</span>
+                      <span className="text-sm font-medium text-primary">{p.cost}</span>
                     </div>
                     <p className="text-sm text-muted-foreground">{p.agency} • {p.timeline}</p>
                   </div>
@@ -322,13 +322,16 @@ export default function Report() {
               <div className="flex justify-between rounded-xl border border-primary/30 bg-primary/5 p-5">
                 <div>
                   <p className="text-sm text-muted-foreground">Total Estimated Cost</p>
-                  <p className="text-2xl font-bold text-primary">${getTotalCost(permits).toLocaleString()}</p>
+                  <p className="text-2xl font-bold text-primary">
+                    {(() => { const r = getTotalCostRange(permits); return r.min === r.max ? `$${r.min.toLocaleString()}` : `$${r.min.toLocaleString()} – $${r.max.toLocaleString()}`; })()}
+                  </p>
                 </div>
                 <div className="text-right">
                   <p className="text-sm text-muted-foreground">Max Timeline</p>
                   <p className="text-2xl font-bold">{getMaxTimeline(permits)}</p>
                 </div>
               </div>
+              <p className="text-xs text-muted-foreground italic mt-2">{PERMIT_DISCLAIMER}</p>
             </div>
           </TabsContent>
 
