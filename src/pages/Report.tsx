@@ -163,21 +163,41 @@ function haversine(lat1: number, lon1: number, lat2: number, lon2: number): numb
 }
 
 /* ───── Crime rate: crimes per 1,000 population ───── */
-// 250m radius circle ≈ 0.196 km². Chicago avg density ~4,600/km² → ~900 people.
-// We estimate population for the area and compute rate per 1,000.
-const EST_POP_250M = 900;
+// 1-mile radius circle ≈ π × 1.609² km² ≈ 8.14 km². Chicago avg density ~4,600/km² → ~37,400 people.
+const EST_POP_1MI = 37400;
 function crimeRate(crimeCount: number): number {
-  return Math.round((crimeCount / EST_POP_250M) * 1000 * 10) / 10; // one decimal
+  return Math.round((crimeCount / EST_POP_1MI) * 1000 * 10) / 10; // per 1,000 pop
 }
 function crimeRiskLabel(count: number): string {
-  if (count <= 10) return "🟢 Low Risk";
-  if (count <= 30) return "🟡 Medium Risk";
+  const rate = crimeRate(count);
+  if (rate < 5) return "🟢 Low Risk";
+  if (rate <= 15) return "🟡 Medium Risk";
   return "🔴 High Risk";
 }
 function crimeRiskScore(count: number): number {
-  if (count <= 10) return 90;
-  if (count <= 30) return 50;
+  const rate = crimeRate(count);
+  if (rate < 5) return 90;
+  if (rate <= 15) return 50;
   return 20;
+}
+
+/* ───── Competition density: businesses per sq mile ───── */
+// 1-mile radius circle = π sq miles ≈ 3.14 sq mi
+const AREA_SQ_MI = Math.PI; // π sq miles
+function compDensity(count: number): number {
+  return Math.round((count / AREA_SQ_MI) * 10) / 10;
+}
+function compDensityLabel(count: number): string {
+  const d = compDensity(count);
+  if (d < 5) return "🟢 Low";
+  if (d <= 15) return "🟡 Medium";
+  return "🔴 High";
+}
+function compDensityScore(count: number): number {
+  const d = compDensity(count);
+  if (d < 5) return 90;
+  if (d <= 15) return 60;
+  return 25;
 }
 
 /* ───── Fetch area data helper ───── */
@@ -196,14 +216,14 @@ async function fetchAreaData(lat: number, lng: number, businessType: string, are
   };
   const keywords = typeKeywords[businessType] || ["RETAIL"];
   const likeClause = keywords.map(k => `upper(license_description) like '%${k}%'`).join(" OR ");
-  const compWhere = encodeURIComponent(`within_circle(location,${lat},${lng},500) AND (${likeClause})`);
-  const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString();
-  const dateStr = sixMonthsAgo.split("T")[0];
-  const crimeWhere = encodeURIComponent(`within_circle(location,${lat},${lng},250) AND date>'${dateStr}'`);
+    const compWhere = encodeURIComponent(`within_circle(location,${lat},${lng},1609) AND (${likeClause})`);
+    const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString();
+    const dateStr = sixMonthsAgo.split("T")[0];
+    const crimeWhere = encodeURIComponent(`within_circle(location,${lat},${lng},1609) AND date>'${dateStr}'`);
 
-  const [compRes, crimeRes, ctaRes] = await Promise.all([
-    fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=${compWhere}&$limit=50`).then(r => r.ok ? r.json() : []),
-    fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=${crimeWhere}&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
+    const [compRes, crimeRes, ctaRes] = await Promise.all([
+      fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=${compWhere}&$limit=50`).then(r => r.ok ? r.json() : []),
+      fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=${crimeWhere}&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
     fetch(`https://data.cityofchicago.org/resource/8mj8-j3c4.json`).then(r => r.ok ? r.json() : []),
   ]);
 
@@ -277,16 +297,16 @@ function LocationTab({ data }: { data: any }) {
         };
         const keywords = typeKeywords[data.type] || ["RETAIL"];
         const likeClause = keywords.map(k => `upper(license_description) like '%${k}%'`).join(" OR ");
-        const compWhere = encodeURIComponent(`within_circle(location,${lat},${lng},500) AND (${likeClause})`);
-        const vacantWhere = encodeURIComponent(`within_circle(location,${lat},${lng},500)`);
+        const compWhere = encodeURIComponent(`within_circle(location,${lat},${lng},1609) AND (${likeClause})`);
+        const vacantWhere = encodeURIComponent(`within_circle(location,${lat},${lng},1609)`);
         const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString();
         const dateStr = sixMonthsAgo.split("T")[0];
-        const crimeWhere = encodeURIComponent(`within_circle(location,${lat},${lng},250) AND date>'${dateStr}'`);
+        const crimeWhere = encodeURIComponent(`within_circle(location,${lat},${lng},1609) AND date>'${dateStr}'`);
 
         const [compRes, vacRes, crimeRes, ctaRes] = await Promise.all([
-          fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=${compWhere}&$limit=200`).then(r => r.ok ? r.json() : []),
+          fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=${compWhere}&$limit=50`).then(r => r.ok ? r.json() : []),
           fetch(`https://data.cityofchicago.org/resource/7nii-7srd.json?$where=${vacantWhere}&$limit=50`).then(r => r.ok ? r.json() : []),
-          fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=${crimeWhere}&$limit=200&$order=date DESC`).then(r => r.ok ? r.json() : []),
+          fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=${crimeWhere}&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
           fetch(`https://data.cityofchicago.org/resource/8mj8-j3c4.json`).then(r => r.ok ? r.json() : []),
         ]);
 
@@ -307,7 +327,7 @@ function LocationTab({ data }: { data: any }) {
         setCtaStations(nearest);
 
         // Main location scores for comparison
-        const mainCompScore = compRes.length <= 3 ? 90 : compRes.length <= 8 ? 60 : 25;
+        const mainCompScore = compDensityScore(compRes.length);
         const mainSafeScore = crimeRiskScore(crimeRes.length);
         const mainCtaScore = nearest.length > 0 ? (nearest[0].walkMin <= 5 ? 90 : nearest[0].walkMin <= 10 ? 70 : 40) : 40;
         const mainOverall = Math.round((mainCompScore + mainSafeScore + mainCtaScore) / 3);
@@ -331,7 +351,7 @@ function LocationTab({ data }: { data: any }) {
             reverseGeocode(sLat, sLng),
           ]);
 
-          const compScore_ = areaData.competitors.length <= 3 ? 90 : areaData.competitors.length <= 8 ? 60 : 25;
+          const compScore_ = compDensityScore(areaData.competitors.length);
           const safeScore_ = crimeRiskScore(areaData.crimes.length);
           const ctaScore_ = areaData.ctaStations.length > 0
             ? (areaData.ctaStations[0].walkMin <= 5 ? 90 : areaData.ctaStations[0].walkMin <= 10 ? 70 : 40)
@@ -438,9 +458,9 @@ function LocationTab({ data }: { data: any }) {
   }, [competitors, vacants, crimes, lat, lng]);
 
   // Score calculations from live data
-  const compScore = competitors.length <= 3 ? "🟢 Low" : competitors.length <= 8 ? "🟡 Medium" : "🔴 High";
+  const compScore = compDensityLabel(competitors.length);
 
-  // Safety — 250m radius, crime rate per 1,000 population
+  // Safety — 1-mile radius, crime rate per 1,000 population
   const crimeApiFailed = crimes.length === 0 && !loading;
   const safetyLabel = crimeApiFailed
     ? "⚠️ Unavailable"
@@ -464,7 +484,7 @@ function LocationTab({ data }: { data: any }) {
             <div className="rounded-xl border border-border bg-card p-5">
               <p className="text-sm text-muted-foreground mb-1">Competition Score</p>
               <p className="text-2xl font-bold">{compScore}</p>
-              <p className="text-xs text-muted-foreground">{competitors.length} competitors within 500m</p>
+              <p className="text-xs text-muted-foreground">{competitors.length} competitors · {compDensity(competitors.length)}/sq mi</p>
             </div>
 
             <div className="rounded-xl border border-border bg-card p-5">
@@ -642,12 +662,12 @@ export default function Report() {
     };
     const keywords = typeKeywords[data.type] || ["RETAIL"];
     const likeClause = keywords.map(k => `upper(license_description) like '%${k}%'`).join(" OR ");
-    const compWhere = encodeURIComponent(`within_circle(location,${rLat},${rLng},500) AND (${likeClause})`);
-    const crimeWhere = encodeURIComponent(`within_circle(location,${rLat},${rLng},250) AND date>'${dateStr}'`);
+    const compWhere = encodeURIComponent(`within_circle(location,${rLat},${rLng},1609) AND (${likeClause})`);
+    const crimeWhere = encodeURIComponent(`within_circle(location,${rLat},${rLng},1609) AND date>'${dateStr}'`);
 
     Promise.all([
-      fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=${compWhere}&$limit=200`).then(r => r.ok ? r.json() : []),
-      fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=${crimeWhere}&$limit=200&$order=date DESC`).then(r => r.ok ? r.json() : []),
+      fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=${compWhere}&$limit=50`).then(r => r.ok ? r.json() : []),
+      fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=${crimeWhere}&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
     ]).then(([comp, crime]) => {
       setCompCount(comp.length);
       setCrimeCount(crime.length);
@@ -659,7 +679,7 @@ export default function Report() {
     });
   }, [data.type, reportCoords]);
 
-  const competitionScore = compCount <= 3 ? 90 : compCount <= 8 ? 60 : 25;
+  const competitionScore = compDensityScore(compCount);
   const costRange = getTotalCostRange(permits);
   const budgetAdequacy = data.budget >= costRange.max ? 90 : data.budget >= costRange.min ? 60 : 20;
   const safetyScore = crimeRiskScore(crimeCount);
