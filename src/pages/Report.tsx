@@ -776,9 +776,6 @@ export default function Report() {
                     </div>
                     <p className="text-sm text-muted-foreground">{p.agency} • {p.timeline}</p>
                   </div>
-                  <a href={p.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:opacity-80">
-                    <ExternalLink className="h-4 w-4" />
-                  </a>
                 </div>
               ))}
               <div className="flex justify-between rounded-xl border border-primary/30 bg-primary/5 p-5">
