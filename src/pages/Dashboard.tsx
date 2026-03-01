@@ -2,10 +2,12 @@ import { useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Plus, LogOut, Building2, Settings, Key } from "lucide-react";
+import { Plus, LogOut, Building2, Settings, Key, Trash2 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useBusiness, defaultBusinessData } from "@/contexts/BusinessContext";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
+import { toast } from "sonner";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -34,6 +36,16 @@ export default function Dashboard() {
   const handleNewBusiness = () => {
     setData(defaultBusinessData);
     navigate("/questionnaire");
+  };
+
+  const handleDelete = async (id: string) => {
+    const { error } = await supabase.from("businesses").delete().eq("id", id);
+    if (error) {
+      toast.error("Failed to delete business");
+      return;
+    }
+    setBusinesses(prev => prev.filter(b => b.id !== id));
+    toast.success("Business deleted");
   };
 
   const handleSignOut = async () => {
@@ -104,30 +116,51 @@ export default function Dashboard() {
               <Button variant="accent" size="lg" onClick={handleNewBusiness}>
                 <Plus className="mr-2 h-5 w-5" /> Start New Business
               </Button>
-              {/* Mobile-only button */}
-              <div className="mt-6 md:hidden">
-                <Button variant="accent-outline" size="lg" onClick={handleNewBusiness}>
-                  <Plus className="mr-2 h-5 w-5" /> Start New Business
-                </Button>
-              </div>
             </div>
           ) : (
             <div className="w-full max-w-2xl space-y-4">
               <h2 className="text-2xl font-semibold mb-4">Your Businesses</h2>
               {businesses.map((b, i) => (
-                <button
+                <div
                   key={b.id || i}
-                  onClick={() => { setData(b); navigate("/report"); }}
-                  className="flex w-full items-center gap-4 rounded-xl border border-border bg-card p-5 text-left transition-all hover:border-primary/30 hover:glow-teal"
+                  className="flex items-center gap-4 rounded-xl border border-border bg-card p-5 transition-all hover:border-primary/30 hover:glow-teal"
                 >
-                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
-                    <Building2 className="h-6 w-6 text-primary" />
-                  </div>
-                  <div>
-                    <p className="font-semibold">{b.name || "Untitled"}</p>
-                    <p className="text-sm text-muted-foreground">{b.type}</p>
-                  </div>
-                </button>
+                  <button
+                    onClick={() => { setData(b); navigate("/report"); }}
+                    className="flex flex-1 items-center gap-4 text-left"
+                  >
+                    <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
+                      <Building2 className="h-6 w-6 text-primary" />
+                    </div>
+                    <div>
+                      <p className="font-semibold">{b.name || "Untitled"}</p>
+                      <p className="text-sm text-muted-foreground">{b.type}</p>
+                    </div>
+                  </button>
+                  {b.id && (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive shrink-0">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete "{b.name}"?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will permanently delete this business and all its data. This action cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => handleDelete(b.id!)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
+                </div>
               ))}
             </div>
           )}

@@ -6,17 +6,14 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
-// Redirect already-authenticated users to dashboard
-
 export default function Auth() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const [mode, setMode] = useState<"login" | "signup">(searchParams.get("mode") === "signup" ? "signup" : "login");
+  const [mode, setMode] = useState<"login" | "signup" | "forgot">(searchParams.get("mode") === "signup" ? "signup" : "login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Redirect if already logged in
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) navigate("/dashboard");
@@ -27,7 +24,14 @@ export default function Auth() {
     e.preventDefault();
     setLoading(true);
     try {
-      if (mode === "signup") {
+      if (mode === "forgot") {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/reset-password`,
+        });
+        if (error) throw error;
+        toast.success("Check your email for a password reset link!");
+        setMode("login");
+      } else if (mode === "signup") {
         const { error } = await supabase.auth.signUp({
           email, password,
           options: { emailRedirectTo: `${window.location.origin}/dashboard` },
@@ -52,26 +56,38 @@ export default function Auth() {
         <Link to="/" className="mb-8 block text-center text-3xl font-bold text-gradient-teal">Bizlo</Link>
         <div className="rounded-xl border border-border bg-card p-8">
           <h2 className="mb-6 text-center text-2xl font-semibold">
-            {mode === "login" ? "Welcome back" : "Create your account"}
+            {mode === "login" ? "Welcome back" : mode === "signup" ? "Create your account" : "Reset your password"}
           </h2>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <Label htmlFor="email">Email</Label>
               <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" required className="mt-1" />
             </div>
-            <div>
-              <Label htmlFor="password">Password</Label>
-              <Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required minLength={6} className="mt-1" />
-            </div>
+            {mode !== "forgot" && (
+              <div>
+                <Label htmlFor="password">Password</Label>
+                <Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required minLength={6} className="mt-1" />
+              </div>
+            )}
+            {mode === "login" && (
+              <div className="text-right">
+                <button type="button" onClick={() => setMode("forgot")} className="text-xs text-primary hover:underline">
+                  Forgot password?
+                </button>
+              </div>
+            )}
             <Button variant="accent" className="w-full" type="submit" disabled={loading}>
-              {loading ? "Loading..." : mode === "login" ? "Sign In" : "Create Account"}
+              {loading ? "Loading..." : mode === "login" ? "Sign In" : mode === "signup" ? "Create Account" : "Send Reset Link"}
             </Button>
           </form>
           <p className="mt-6 text-center text-sm text-muted-foreground">
-            {mode === "login" ? "Don't have an account? " : "Already have an account? "}
-            <button onClick={() => setMode(mode === "login" ? "signup" : "login")} className="text-primary hover:underline">
-              {mode === "login" ? "Sign up" : "Sign in"}
-            </button>
+            {mode === "forgot" ? (
+              <button onClick={() => setMode("login")} className="text-primary hover:underline">Back to sign in</button>
+            ) : mode === "login" ? (
+              <>Don't have an account? <button onClick={() => setMode("signup")} className="text-primary hover:underline">Sign up</button></>
+            ) : (
+              <>Already have an account? <button onClick={() => setMode("login")} className="text-primary hover:underline">Sign in</button></>
+            )}
           </p>
         </div>
       </div>
