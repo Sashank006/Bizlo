@@ -1,14 +1,18 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { format } from "date-fns";
+import { CalendarIcon, ArrowLeft, ArrowRight, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
+import { cn } from "@/lib/utils";
 import { useBusiness, BusinessData } from "@/contexts/BusinessContext";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 
@@ -41,12 +45,8 @@ function validateStep(step: number, data: BusinessData): Errors {
   }
 
   if (step === 1) {
-    if (data.hasLocation) {
-      if (!data.address.trim()) e.address = "This field is required";
-      else if (data.address.trim().length < 5) e.address = "Minimum 5 characters";
-    } else {
-      if (!data.area) e.area = "Please select an area";
-    }
+    if (!data.address.trim()) e.address = "This field is required";
+    else if (data.address.trim().length < 5) e.address = "Minimum 5 characters";
     if (!data.sqft || data.sqft <= 0) e.sqft = "Please enter a valid number";
     else if (data.sqft < 100 || data.sqft > 50000) e.sqft = "Must be between 100 and 50,000";
     if (!data.rentBudget || data.rentBudget <= 0) e.rentBudget = "Please enter a valid number";
@@ -165,7 +165,24 @@ export default function Questionnaire() {
                   </div>
                   <div>
                     <Label>Target Opening Date *</Label>
-                    <Input className="mt-1" type="date" value={data.launchDate} onChange={e => update({ launchDate: e.target.value })} />
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" className={cn("mt-1 w-full justify-start text-left font-normal", !data.launchDate && "text-muted-foreground")}>
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {data.launchDate ? format(new Date(data.launchDate + "T00:00:00"), "PPP") : <span>Pick a date</span>}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={data.launchDate ? new Date(data.launchDate + "T00:00:00") : undefined}
+                          onSelect={(date) => update({ launchDate: date ? format(date, "yyyy-MM-dd") : "" })}
+                          disabled={(date) => date <= new Date()}
+                          initialFocus
+                          className={cn("p-3 pointer-events-auto")}
+                        />
+                      </PopoverContent>
+                    </Popover>
                     {show && <FieldError msg={errors.launchDate} />}
                   </div>
                 </div>
@@ -173,23 +190,11 @@ export default function Questionnaire() {
 
               {step === 1 && (
                 <div className="space-y-5">
-                  <div className="flex items-center justify-between"><Label>Do you have an address in mind?</Label><Switch checked={data.hasLocation} onCheckedChange={v => update({ hasLocation: v })} /></div>
-                  {data.hasLocation ? (
-                    <div>
-                      <Label>Address *</Label>
-                      <Input className="mt-1" value={data.address} onChange={textChange("address")} placeholder="123 W Madison St" maxLength={MAX_TEXT} />
-                      {show && <FieldError msg={errors.address} />}
-                    </div>
-                  ) : (
-                    <div>
-                      <Label>Preferred Area *</Label>
-                      <Select value={data.area} onValueChange={v => update({ area: v })}>
-                        <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                        <SelectContent>{AREAS.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}</SelectContent>
-                      </Select>
-                      {show && <FieldError msg={errors.area} />}
-                    </div>
-                  )}
+                  <div>
+                    <Label>Street Address in Chicago *</Label>
+                    <Input className="mt-1" value={data.address} onChange={e => { update({ address: e.target.value.slice(0, MAX_TEXT), hasLocation: true }); }} placeholder="123 W Madison St, Chicago, IL" maxLength={MAX_TEXT} />
+                    {show && <FieldError msg={errors.address} />}
+                  </div>
                   <div>
                     <Label>Square Footage Needed *</Label>
                     <Input className="mt-1" type="number" min="100" max="50000" value={data.sqft || ""} onChange={numChange("sqft")} />
