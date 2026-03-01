@@ -32,11 +32,17 @@ export default function Auth() {
         toast.success("Check your email for a password reset link!");
         setMode("login");
       } else if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email, password,
           options: { emailRedirectTo: `${window.location.origin}/dashboard` },
         });
         if (error) throw error;
+        // If identities is empty, account already exists
+        if (data.user && data.user.identities && data.user.identities.length === 0) {
+          toast.error("An account with this email already exists. Please sign in instead.");
+          setMode("login");
+          return;
+        }
         toast.success("Check your email to verify your account!");
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -61,12 +67,12 @@ export default function Auth() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" required className="mt-1" />
+              <Input id="email" name="email" type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" required className="mt-1" />
             </div>
             {mode !== "forgot" && (
               <div>
                 <Label htmlFor="password">Password</Label>
-                <Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required minLength={6} className="mt-1" />
+                <Input id="password" name="password" type="password" autoComplete={mode === "signup" ? "new-password" : "current-password"} value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required minLength={6} className="mt-1" />
               </div>
             )}
             {mode === "login" && (
