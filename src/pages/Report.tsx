@@ -158,8 +158,12 @@ interface AreaSuggestion {
   compCount: number;
   crimeCount: number;
   ctaMin: number;
+  ctaName: string;
   reason: string;
   score: number;
+  distKm: number;
+  lat: number;
+  lng: number;
 }
 
 /* ───── Location Analysis Tab ───── */
@@ -218,49 +222,50 @@ function LocationTab({ data }: { data: any }) {
 
         console.log(`[LocationTab] Nearest CTA:`, nearest);
 
-        // Fetch alternative suggestions — smart by business type, never suggest current area
-        const currentArea = data.area || "Loop";
-        const areaReasons: Record<string, string> = {
-          Loop: "High foot traffic from office workers and tourists, ideal for quick-service concepts.",
-          "West Loop": "Trendy dining scene with affluent customers, great for upscale and creative businesses.",
-          "River North": "Nightlife hub with high evening foot traffic, perfect for bars and entertainment.",
-          "South Loop": "Growing residential area with less competition and lower rents.",
-        };
-        const typeSuggestions: Record<string, string[]> = {
-          Restaurant: ["West Loop", "South Loop", "River North", "Loop"],
-          "Coffee Shop": ["West Loop", "South Loop", "River North", "Loop"],
-          Retail: ["River North", "West Loop", "Loop", "South Loop"],
-          Salon: ["River North", "South Loop", "West Loop", "Loop"],
-          Gym: ["South Loop", "West Loop", "River North", "Loop"],
-          Office: ["Loop", "West Loop", "River North", "South Loop"],
-          Bar: ["River North", "West Loop", "Loop", "South Loop"],
-          Daycare: ["South Loop", "West Loop", "Loop", "River North"],
-          Medical: ["Loop", "South Loop", "West Loop", "River North"],
-          Hotel: ["Loop", "River North", "West Loop", "South Loop"],
-        };
-        const ranked = (typeSuggestions[data.type] || ["Loop", "West Loop", "River North", "South Loop"])
-          .filter(a => a !== currentArea);
-        const suggestAreas = ranked.slice(0, 3);
+        // Fetch alternative suggestions — coordinate-based directions from user's actual location
+        const directions: { label: string; dLat: number; dLng: number }[] = [
+          { label: "North", dLat: 0.02, dLng: 0 },
+          { label: "South", dLat: -0.02, dLng: 0 },
+          { label: "East", dLat: 0, dLng: 0.02 },
+          { label: "West", dLat: 0, dLng: -0.02 },
+        ];
 
-        console.log(`[LocationTab] Suggesting areas for ${data.type} (current=${currentArea}): ${suggestAreas.join(", ")}`);
+        console.log(`[LocationTab] Fetching directional suggestions from lat=${lat} lng=${lng}`);
 
-        const suggestionPromises = suggestAreas.map(async (areaName) => {
-          const [aLat, aLng] = AREA_COORDS[areaName];
-          const areaData = await fetchAreaData(aLat, aLng, data.type, areaName);
-          const compScore = areaData.competitors.length <= 3 ? 90 : areaData.competitors.length <= 8 ? 60 : 25;
-          const safeScore = areaData.crimes.length <= 5 ? 95 : areaData.crimes.length <= 15 ? 65 : areaData.crimes.length <= 30 ? 35 : 15;
-          const ctaScore = areaData.ctaStations.length > 0
+        const suggestionPromises = directions.map(async (dir) => {
+          const sLat = lat + dir.dLat;
+          const sLng = lng + dir.dLng;
+          const distM = haversine(lat, lng, sLat, sLng);
+          const distKm = Math.round(distM / 100) / 10;
+          const areaData = await fetchAreaData(sLat, sLng, data.type, `${distKm}km ${dir.label}`);
+          const compScore_ = areaData.competitors.length <= 3 ? 90 : areaData.competitors.length <= 8 ? 60 : 25;
+          const safeScore_ = areaData.crimes.length <= 5 ? 95 : areaData.crimes.length <= 15 ? 65 : areaData.crimes.length <= 30 ? 35 : 15;
+          const ctaScore_ = areaData.ctaStations.length > 0
             ? (areaData.ctaStations[0].walkMin <= 5 ? 90 : areaData.ctaStations[0].walkMin <= 10 ? 70 : 40)
             : 40;
-          const overall = Math.round((compScore + safeScore + ctaScore) / 3);
-          console.log(`[Suggestion] ${areaName}: comp=${areaData.competitors.length}(${compScore}) crime=${areaData.crimes.length}(${safeScore}) cta=${areaData.ctaStations[0]?.walkMin || 'N/A'}min(${ctaScore}) overall=${overall}`);
+          const overall = Math.round((compScore_ + safeScore_ + ctaScore_) / 3);
+
+          // Compare to main location
+          const mainCompScore = compRes.length <= 3 ? 90 : compRes.length <= 8 ? 60 : 25;
+          const mainSafeScore = crimeRes.length <= 5 ? 95 : crimeRes.length <= 15 ? 65 : crimeRes.length <= 30 ? 35 : 15;
+          let reason = "";
+          if (compScore_ > mainCompScore) reason += "Less competition. ";
+          if (safeScore_ > mainSafeScore) reason += "Safer area. ";
+          if (areaData.ctaStations.length > 0 && areaData.ctaStations[0].walkMin <= 5) reason += "Excellent transit access. ";
+          if (!reason) reason = "Comparable to your current location.";
+
+          console.log(`[Suggestion] ${distKm}km ${dir.label}: comp=${areaData.competitors.length} crime=${areaData.crimes.length} cta=${areaData.ctaStations[0]?.walkMin || 'N/A'}min overall=${overall}`);
           return {
-            area: areaName,
+            area: `${distKm}km ${dir.label}`,
             compCount: areaData.competitors.length,
             crimeCount: areaData.crimes.length,
             ctaMin: areaData.ctaStations[0]?.walkMin || 99,
-            reason: areaReasons[areaName] || "Alternative area with different characteristics.",
+            ctaName: areaData.ctaStations[0]?.name || "—",
+            reason: reason.trim(),
             score: overall,
+            distKm,
+            lat: sLat,
+            lng: sLng,
           };
         });
         const results = await Promise.all(suggestionPromises);
@@ -415,18 +420,17 @@ function LocationTab({ data }: { data: any }) {
             <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded-full" style={{ background: "#3b82f6" }} /> Crime Incidents</span>
           </div>
 
-          {/* Location Suggestions — always shown with independent data */}
+          {/* Location Suggestions — coordinate-based nearby areas */}
           {suggestions.length > 0 && (
             <div className="space-y-3">
               <h3 className="text-lg font-semibold flex items-center gap-2">
                 <MapPin className="h-5 w-5 text-primary" />
-                Alternative Locations to Consider
+                Nearby Alternative Locations
               </h3>
               <div className="grid gap-4 sm:grid-cols-3">
                 {suggestions.map((s) => {
                   const compLabel = s.compCount <= 3 ? "🟢 Low" : s.compCount <= 8 ? "🟡 Medium" : "🔴 High";
                   const safeLabel = s.crimeCount <= 5 ? "🟢 Very Safe" : s.crimeCount <= 15 ? "🟡 Moderate" : s.crimeCount <= 30 ? "🔴 Caution" : "🔴 High Crime";
-                  const ctaLabel = s.ctaMin <= 5 ? "🟢 Excellent" : s.ctaMin <= 10 ? "🟡 Good" : "🔴 Far";
                   const scoreColor = s.score >= 71 ? "text-success" : s.score >= 41 ? "text-warning" : "text-danger";
                   return (
                     <div key={s.area} className="rounded-xl border border-border bg-card p-5 space-y-2">
@@ -434,11 +438,11 @@ function LocationTab({ data }: { data: any }) {
                         <h4 className="font-semibold">{s.area}</h4>
                         <span className={`text-xl font-bold ${scoreColor}`}>{s.score}</span>
                       </div>
-                      <p className="text-xs text-muted-foreground">{s.reason}</p>
+                      <p className="text-xs text-muted-foreground italic">{s.reason}</p>
                       <div className="space-y-1 text-xs">
                         <div className="flex justify-between"><span className="text-muted-foreground">Competition</span><span>{compLabel} ({s.compCount})</span></div>
                         <div className="flex justify-between"><span className="text-muted-foreground">Safety</span><span>{safeLabel} ({s.crimeCount})</span></div>
-                        <div className="flex justify-between"><span className="text-muted-foreground">CTA</span><span>{ctaLabel} ({s.ctaMin} min)</span></div>
+                        <div className="flex justify-between"><span className="text-muted-foreground">Nearest CTA</span><span>{s.ctaName} ({s.ctaMin} min)</span></div>
                       </div>
                     </div>
                   );
