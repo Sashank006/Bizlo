@@ -170,15 +170,13 @@ function crimeRate(crimeCount: number): number {
   return Math.round((crimeCount / EST_POP_250M) * 1000 * 10) / 10; // one decimal
 }
 function crimeRiskLabel(count: number): string {
-  const rate = crimeRate(count);
-  if (rate < 17) return "🟢 Low Risk";
-  if (rate <= 33) return "🟡 Medium Risk";
+  if (count <= 10) return "🟢 Low Risk";
+  if (count <= 30) return "🟡 Medium Risk";
   return "🔴 High Risk";
 }
 function crimeRiskScore(count: number): number {
-  const rate = crimeRate(count);
-  if (rate < 17) return 90;
-  if (rate <= 33) return 50;
+  if (count <= 10) return 90;
+  if (count <= 30) return 50;
   return 20;
 }
 
@@ -286,9 +284,9 @@ function LocationTab({ data }: { data: any }) {
         const crimeWhere = encodeURIComponent(`within_circle(location,${lat},${lng},250) AND date>'${dateStr}'`);
 
         const [compRes, vacRes, crimeRes, ctaRes] = await Promise.all([
-          fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=${compWhere}&$limit=50`).then(r => r.ok ? r.json() : []),
+          fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=${compWhere}&$limit=200`).then(r => r.ok ? r.json() : []),
           fetch(`https://data.cityofchicago.org/resource/7nii-7srd.json?$where=${vacantWhere}&$limit=50`).then(r => r.ok ? r.json() : []),
-          fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=${crimeWhere}&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
+          fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=${crimeWhere}&$limit=200&$order=date DESC`).then(r => r.ok ? r.json() : []),
           fetch(`https://data.cityofchicago.org/resource/8mj8-j3c4.json`).then(r => r.ok ? r.json() : []),
         ]);
 
@@ -488,8 +486,9 @@ function LocationTab({ data }: { data: any }) {
             </div>
           </div>
           <div className="flex items-center gap-4 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded-full bg-danger" /> Competitors</span>
-            <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded-full bg-success" /> Vacant Storefronts</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-full" style={{ background: "#ef4444" }} /> Competitors ({competitors.length})</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-full" style={{ background: "#22c55e" }} /> Vacant Storefronts ({vacants.length})</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-full" style={{ background: "#3b82f6" }} /> Your Location</span>
           </div>
 
           {/* Alternative Location Suggestions */}
@@ -647,8 +646,8 @@ export default function Report() {
     const crimeWhere = encodeURIComponent(`within_circle(location,${rLat},${rLng},250) AND date>'${dateStr}'`);
 
     Promise.all([
-      fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=${compWhere}&$limit=50`).then(r => r.ok ? r.json() : []),
-      fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=${crimeWhere}&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
+      fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=${compWhere}&$limit=200`).then(r => r.ok ? r.json() : []),
+      fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=${crimeWhere}&$limit=200&$order=date DESC`).then(r => r.ok ? r.json() : []),
     ]).then(([comp, crime]) => {
       setCompCount(comp.length);
       setCrimeCount(crime.length);
