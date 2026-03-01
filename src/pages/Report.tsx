@@ -478,43 +478,16 @@ function LocationTab({ data }: { data: any }) {
   return (
     <div className="space-y-4">
       <div ref={mapContainer} style={{ height: "400px", width: "100%" }} className="rounded-xl border border-border overflow-hidden" />
+      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-full" style={{ background: "#ef4444" }} /> Competitors ({competitors.length})</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-full" style={{ background: "#22c55e" }} /> Vacant Storefronts ({vacants.length})</span>
+      </div>
       {loading ? (
         <div className="flex items-center justify-center py-4 gap-2 text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading location data…
         </div>
       ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="rounded-xl border border-border bg-card p-5">
-              <p className="text-sm text-muted-foreground mb-1">Competition Score</p>
-              <p className="text-2xl font-bold">{compScore}</p>
-              <p className="text-xs text-muted-foreground">{competitors.length} competitors · {compDensity(competitors.length)}/sq mi</p>
-            </div>
-
-            <div className="rounded-xl border border-border bg-card p-5">
-              <p className="text-sm text-muted-foreground mb-1">Safety Risk Level</p>
-              <p className="text-2xl font-bold">{safetyLabel}</p>
-              {crimeApiFailed ? (
-                <p className="text-xs text-muted-foreground mt-1">⚠️ Safety data temporarily unavailable. Exercise general urban caution and verify locally.</p>
-              ) : (
-                <p className="text-xs text-muted-foreground mt-1">Based on historical Chicago crime data</p>
-              )}
-            </div>
-
-            <div className="rounded-xl border border-border bg-card p-5">
-              <p className="text-sm text-muted-foreground mb-1">CTA Proximity</p>
-              <p className="text-2xl font-bold">{ctaScore}</p>
-              {ctaStations.map((s, i) => (
-                <p key={i} className="text-xs text-muted-foreground">{s.name} — {s.walkMin} min walk</p>
-              ))}
-            </div>
-          </div>
-          <div className="flex items-center gap-4 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-full" style={{ background: "#ef4444" }} /> Competitors ({competitors.length})</span>
-            <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-full" style={{ background: "#22c55e" }} /> Vacant Storefronts ({vacants.length})</span>
-            <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded-full" style={{ background: "#3b82f6" }} /> Your Location</span>
-          </div>
-
           {/* Alternative Location Suggestions */}
           {suggestions.length > 0 && (
             <div className="space-y-3">
@@ -527,7 +500,6 @@ function LocationTab({ data }: { data: any }) {
                   const compLabel = s.compCount <= 3 ? "🟢 Low" : s.compCount <= 8 ? "🟡 Medium" : "🔴 High";
                   const safeLabel = crimeRiskLabel(s.crimeCount);
                   const scoreColor = s.score >= 71 ? "text-success" : s.score >= 41 ? "text-warning" : "text-danger";
-                  // Split area into distance + name parts
                   const [distPart, ...nameParts] = s.area.split(" · ");
                   const neighborhoodName = nameParts.join(" · ") || distPart;
                   return (
