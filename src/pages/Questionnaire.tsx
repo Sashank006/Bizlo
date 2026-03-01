@@ -84,11 +84,13 @@ export default function Questionnaire() {
   };
   const prev = () => { if (step > 0) { setStep(step - 1); setTouched(false); } };
 
+  const isEditing = !!data.id;
+
   const handleSubmit = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const { data: inserted, error } = await supabase.from("businesses").insert({
+    const payload = {
       user_id: user.id,
       name: sanitize(data.name), type: data.type, sells_food: data.sellsFood, sells_alcohol: data.sellsAlcohol,
       has_location: data.hasLocation, address: sanitize(data.address), area: data.area,
@@ -97,10 +99,17 @@ export default function Questionnaire() {
       target_customers: data.targetCustomers.join(","),
       avg_ticket: data.avgTicket, daily_customers: data.dailyCustomers,
       operating_hours: `${data.openTime}-${data.closeTime}`,
-    }).select().single();
+    };
 
-    if (error) { console.error(error); return; }
-    if (inserted) setData(prev => ({ ...prev, id: inserted.id }));
+    if (isEditing) {
+      const { error } = await supabase.from("businesses").update(payload).eq("id", data.id!);
+      if (error) { console.error(error); toast.error("Failed to update business"); return; }
+      toast.success("Business updated");
+    } else {
+      const { data: inserted, error } = await supabase.from("businesses").insert(payload).select().single();
+      if (error) { console.error(error); return; }
+      if (inserted) setData(prev => ({ ...prev, id: inserted.id }));
+    }
     navigate("/analysis");
   };
 

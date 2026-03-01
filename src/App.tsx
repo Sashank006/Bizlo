@@ -11,6 +11,7 @@ import Dashboard from "./pages/Dashboard";
 import Questionnaire from "./pages/Questionnaire";
 import Analysis from "./pages/Analysis";
 import Report from "./pages/Report";
+import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -30,6 +31,7 @@ const App = () => (
             <Route path="/questionnaire" element={<Questionnaire />} />
             <Route path="/analysis" element={<Analysis />} />
             <Route path="/report" element={<Report />} />
+            <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
