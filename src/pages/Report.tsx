@@ -25,6 +25,47 @@ function getCoords(data: any): [number, number] {
   return AREA_COORDS[data.area] || AREA_COORDS.Loop;
 }
 
+/* ───── Market Fit Score ───── */
+function calcMarketFitScore(businessType: string, area: string, targetCustomers: string[]): number {
+  let score = 50; // baseline
+
+  const highFitCombos: Record<string, string[]> = {
+    Restaurant: ["Loop", "West Loop"],
+    "Coffee Shop": ["Loop", "West Loop"],
+    Retail: ["River North"],
+    Office: ["Loop"],
+    Bar: ["River North", "West Loop"],
+    Salon: ["River North", "South Loop"],
+    Gym: ["South Loop", "West Loop"],
+    Daycare: ["South Loop"],
+    Medical: ["Loop", "South Loop"],
+    Hotel: ["Loop", "River North"],
+  };
+
+  const fits = highFitCombos[businessType] || [];
+  if (fits.includes(area)) {
+    score = 85;
+  } else {
+    score = 45;
+  }
+
+  // Bonus if target customers align with area demographics
+  const areaDemographics: Record<string, string[]> = {
+    Loop: ["office workers", "tourists", "commuters", "professionals"],
+    "West Loop": ["foodies", "young professionals", "affluent diners", "professionals"],
+    "River North": ["tourists", "nightlife", "shoppers", "young professionals"],
+    "South Loop": ["residents", "families", "students", "commuters"],
+  };
+  const demo = areaDemographics[area] || [];
+  const overlap = targetCustomers.filter(tc => demo.some(d => tc.toLowerCase().includes(d) || d.includes(tc.toLowerCase())));
+  if (overlap.length > 0) {
+    score = Math.min(100, score + 10);
+  }
+
+  console.log(`[MarketFit] type=${businessType}, area=${area}, targetCustomers=${targetCustomers}, score=${score}`);
+  return score;
+}
+
 /* ───── Viability Circle ───── */
 function ViabilityCircle({ score }: { score: number }) {
   const r = 54, c = 2 * Math.PI * r;
@@ -73,21 +114,24 @@ function haversine(lat1: number, lon1: number, lat2: number, lon2: number): numb
 }
 
 /* ───── Fetch area data helper ───── */
-async function fetchAreaData(lat: number, lng: number, businessType: string) {
+async function fetchAreaData(lat: number, lng: number, businessType: string, areaLabel: string) {
   const typeMap: Record<string, string> = {
     Restaurant: "RETAIL FOOD", Retail: "RETAIL", Salon: "BEAUTY SALON",
     "Coffee Shop": "RETAIL FOOD", Bar: "LIQUOR", Gym: "LIMITED BUSINESS LICENSE",
   };
   const licenseType = typeMap[businessType] || "RETAIL";
-  const sixMonthsAgo = new Date();
-  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-  const dateStr = sixMonthsAgo.toISOString().split("T")[0];
+  const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString();
+  const dateStr = sixMonthsAgo.split("T")[0];
+
+  console.log(`[fetchAreaData] area=${areaLabel} lat=${lat} lng=${lng} type=${licenseType}`);
 
   const [compRes, crimeRes, ctaRes] = await Promise.all([
     fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=within_circle(location,${lat},${lng},500)&$limit=50&license_description=${encodeURIComponent(licenseType)}`).then(r => r.ok ? r.json() : []),
     fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=within_circle(location,${lat},${lng},500) AND date>'${dateStr}'&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
     fetch(`https://data.cityofchicago.org/resource/8mj8-j3c4.json`).then(r => r.ok ? r.json() : []),
   ]);
+
+  console.log(`[fetchAreaData] area=${areaLabel} competitors=${compRes.length} crimes=${crimeRes.length} ctaStations=${ctaRes.length}`);
 
   // Deduplicate CTA stations by station_name, use GeoJSON coordinates
   const stationMap = new Map<string, { name: string; walkMin: number }>();
@@ -102,6 +146,8 @@ async function fetchAreaData(lat: number, lng: number, businessType: string) {
     stationMap.set(name, { name, walkMin: Math.round(dist / 80) });
   });
   const ctaStations = Array.from(stationMap.values()).sort((a, b) => a.walkMin - b.walkMin).slice(0, 3);
+
+  console.log(`[fetchAreaData] area=${areaLabel} nearestCTA=${ctaStations[0]?.name || "none"} walkMin=${ctaStations[0]?.walkMin || "N/A"}`);
 
   return { competitors: compRes, crimes: crimeRes, ctaStations };
 }
@@ -137,9 +183,10 @@ function LocationTab({ data }: { data: any }) {
           "Coffee Shop": "RETAIL FOOD", Bar: "LIQUOR", Gym: "LIMITED BUSINESS LICENSE",
         };
         const licenseType = typeMap[data.type] || "RETAIL";
-        const sixMonthsAgo = new Date();
-        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-        const dateStr = sixMonthsAgo.toISOString().split("T")[0];
+        const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString();
+        const dateStr = sixMonthsAgo.split("T")[0];
+
+        console.log(`[LocationTab] Fetching live data for lat=${lat} lng=${lng} type=${licenseType} since=${dateStr}`);
 
         const [compRes, vacRes, crimeRes, ctaRes] = await Promise.all([
           fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=within_circle(location,${lat},${lng},500)&$limit=50&license_description=${encodeURIComponent(licenseType)}`).then(r => r.ok ? r.json() : []),
@@ -147,6 +194,9 @@ function LocationTab({ data }: { data: any }) {
           fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=within_circle(location,${lat},${lng},500) AND date>'${dateStr}'&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
           fetch(`https://data.cityofchicago.org/resource/8mj8-j3c4.json`).then(r => r.ok ? r.json() : []),
         ]);
+
+        console.log(`[LocationTab] Raw results — competitors: ${compRes.length}, vacants: ${vacRes.length}, crimes: ${crimeRes.length}, ctaStations: ${ctaRes.length}`);
+
         setCompetitors(compRes);
         setVacants(vacRes);
         setCrimes(crimeRes);
@@ -166,39 +216,40 @@ function LocationTab({ data }: { data: any }) {
         const nearest = Array.from(stationMap.values()).sort((a, b) => a.walkMin - b.walkMin).slice(0, 3);
         setCtaStations(nearest);
 
-        // Check if suggestions needed
-        const compHigh = compRes.length > 3;
-        const crimeHigh = crimeRes.length > 15;
-        if (compHigh || crimeHigh) {
-          const currentArea = data.area || "Loop";
-          const otherAreas = Object.entries(AREA_COORDS).filter(([name]) => name !== currentArea);
-          const areaReasons: Record<string, string> = {
-            Loop: "High foot traffic from office workers and tourists, ideal for quick-service concepts.",
-            "West Loop": "Trendy dining scene with affluent customers, great for upscale and creative businesses.",
-            "River North": "Nightlife hub with high evening foot traffic, perfect for bars and entertainment.",
-            "South Loop": "Growing residential area with less competition and lower rents.",
-          };
+        console.log(`[LocationTab] Nearest CTA:`, nearest);
 
-          const suggestionPromises = otherAreas.map(async ([areaName, [aLat, aLng]]) => {
-            const areaData = await fetchAreaData(aLat, aLng, data.type);
-            const compScore = areaData.competitors.length <= 3 ? 90 : areaData.competitors.length <= 8 ? 60 : 25;
-            const safeScore = areaData.crimes.length <= 5 ? 95 : areaData.crimes.length <= 15 ? 65 : areaData.crimes.length <= 30 ? 35 : 15;
-            const ctaScore = areaData.ctaStations.length > 0
-              ? (areaData.ctaStations[0].walkMin <= 5 ? 90 : areaData.ctaStations[0].walkMin <= 10 ? 70 : 40)
-              : 40;
-            const overall = Math.round((compScore + safeScore + ctaScore) / 3);
-            return {
-              area: areaName,
-              compCount: areaData.competitors.length,
-              crimeCount: areaData.crimes.length,
-              ctaMin: areaData.ctaStations[0]?.walkMin || 99,
-              reason: areaReasons[areaName] || "Alternative area with different characteristics.",
-              score: overall,
-            };
-          });
-          const results = await Promise.all(suggestionPromises);
-          setSuggestions(results.sort((a, b) => b.score - a.score).slice(0, 3));
-        }
+        // Fetch alternative suggestions — always show alternatives with independent API calls
+        const currentArea = data.area || "Loop";
+        const otherAreas = Object.entries(AREA_COORDS).filter(([name]) => name !== currentArea);
+        const areaReasons: Record<string, string> = {
+          Loop: "High foot traffic from office workers and tourists, ideal for quick-service concepts.",
+          "West Loop": "Trendy dining scene with affluent customers, great for upscale and creative businesses.",
+          "River North": "Nightlife hub with high evening foot traffic, perfect for bars and entertainment.",
+          "South Loop": "Growing residential area with less competition and lower rents.",
+        };
+
+        console.log(`[LocationTab] Fetching independent data for ${otherAreas.length} alternative areas...`);
+
+        const suggestionPromises = otherAreas.map(async ([areaName, [aLat, aLng]]) => {
+          const areaData = await fetchAreaData(aLat, aLng, data.type, areaName);
+          const compScore = areaData.competitors.length <= 3 ? 90 : areaData.competitors.length <= 8 ? 60 : 25;
+          const safeScore = areaData.crimes.length <= 5 ? 95 : areaData.crimes.length <= 15 ? 65 : areaData.crimes.length <= 30 ? 35 : 15;
+          const ctaScore = areaData.ctaStations.length > 0
+            ? (areaData.ctaStations[0].walkMin <= 5 ? 90 : areaData.ctaStations[0].walkMin <= 10 ? 70 : 40)
+            : 40;
+          const overall = Math.round((compScore + safeScore + ctaScore) / 3);
+          console.log(`[Suggestion] ${areaName}: comp=${areaData.competitors.length}(${compScore}) crime=${areaData.crimes.length}(${safeScore}) cta=${areaData.ctaStations[0]?.walkMin || 'N/A'}min(${ctaScore}) overall=${overall}`);
+          return {
+            area: areaName,
+            compCount: areaData.competitors.length,
+            crimeCount: areaData.crimes.length,
+            ctaMin: areaData.ctaStations[0]?.walkMin || 99,
+            reason: areaReasons[areaName] || "Alternative area with different characteristics.",
+            score: overall,
+          };
+        });
+        const results = await Promise.all(suggestionPromises);
+        setSuggestions(results.sort((a, b) => b.score - a.score).slice(0, 3));
       } catch (e) {
         console.error("Failed to fetch location data:", e);
       } finally {
@@ -282,10 +333,10 @@ function LocationTab({ data }: { data: any }) {
     };
   }, [competitors, vacants, crimes, lat, lng]);
 
-  // Score calculations
+  // Score calculations from live data
   const compScore = competitors.length <= 3 ? "🟢 Low" : competitors.length <= 8 ? "🟡 Medium" : "🔴 High";
 
-  // Crime breakdown
+  // Crime breakdown from live data
   const crimeBreakdown = { Theft: 0, Assault: 0, Vandalism: 0, Other: 0 };
   crimes.forEach((c: any) => {
     const t = (c.primary_type || "").toUpperCase();
@@ -296,7 +347,7 @@ function LocationTab({ data }: { data: any }) {
   });
   const safetyLabel = crimes.length <= 5 ? "🟢 Very Safe" : crimes.length <= 15 ? "🟡 Moderate" : crimes.length <= 30 ? "🔴 Caution" : "🔴 High Crime Warning";
 
-  // CTA proximity score
+  // CTA proximity score from live data
   const ctaScore = ctaStations.length > 0
     ? (ctaStations[0].walkMin <= 5 ? "🟢 Excellent" : ctaStations[0].walkMin <= 10 ? "🟡 Good" : "🔴 Far")
     : "—";
@@ -342,7 +393,7 @@ function LocationTab({ data }: { data: any }) {
             <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded-full" style={{ background: "#3b82f6" }} /> Crime Incidents</span>
           </div>
 
-          {/* Location Suggestions */}
+          {/* Location Suggestions — always shown with independent data */}
           {suggestions.length > 0 && (
             <div className="space-y-3">
               <h3 className="text-lg font-semibold flex items-center gap-2">
@@ -363,8 +414,8 @@ function LocationTab({ data }: { data: any }) {
                       </div>
                       <p className="text-xs text-muted-foreground">{s.reason}</p>
                       <div className="space-y-1 text-xs">
-                        <div className="flex justify-between"><span className="text-muted-foreground">Competition</span><span>{compLabel}</span></div>
-                        <div className="flex justify-between"><span className="text-muted-foreground">Safety</span><span>{safeLabel}</span></div>
+                        <div className="flex justify-between"><span className="text-muted-foreground">Competition</span><span>{compLabel} ({s.compCount})</span></div>
+                        <div className="flex justify-between"><span className="text-muted-foreground">Safety</span><span>{safeLabel} ({s.crimeCount})</span></div>
                         <div className="flex justify-between"><span className="text-muted-foreground">CTA</span><span>{ctaLabel} ({s.ctaMin} min)</span></div>
                       </div>
                     </div>
@@ -452,26 +503,29 @@ export default function Report() {
   const permits = getPermits(data.type, data.sellsAlcohol);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
 
-  // Viability sub-scores
-  const legalScore = Math.max(0, 100 - permits.length * 10);
+  // Live viability sub-scores
+  const marketFitScore = calcMarketFitScore(data.type, data.area, data.targetCustomers || []);
   const [lat, lng_] = getCoords(data);
   const [compCount, setCompCount] = useState(0);
   const [crimeCount, setCrimeCount] = useState(0);
   const [scoresLoaded, setScoresLoaded] = useState(false);
 
   useEffect(() => {
-    const sixMonthsAgo = new Date();
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-    const dateStr = sixMonthsAgo.toISOString().split("T")[0];
+    const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString();
+    const dateStr = sixMonthsAgo.split("T")[0];
     const typeMap: Record<string, string> = {
       Restaurant: "RETAIL FOOD", Retail: "RETAIL", Salon: "BEAUTY SALON",
-      "Coffee Shop": "RETAIL FOOD", Bar: "LIQUOR",
+      "Coffee Shop": "RETAIL FOOD", Bar: "LIQUOR", Gym: "LIMITED BUSINESS LICENSE",
     };
     const lt = typeMap[data.type] || "RETAIL";
+
+    console.log(`[Viability] Fetching live scores: lat=${lat} lng=${lng_} type=${lt} since=${dateStr}`);
+
     Promise.all([
       fetch(`https://data.cityofchicago.org/resource/xqx5-8hwx.json?$where=within_circle(location,${lat},${lng_},500)&$limit=50&license_description=${encodeURIComponent(lt)}`).then(r => r.ok ? r.json() : []),
       fetch(`https://data.cityofchicago.org/resource/ijzp-q8t2.json?$where=within_circle(location,${lat},${lng_},500) AND date>'${dateStr}'&$limit=50&$order=date DESC`).then(r => r.ok ? r.json() : []),
     ]).then(([comp, crime]) => {
+      console.log(`[Viability] Live results — competitors: ${comp.length}, crimes: ${crime.length}`);
       setCompCount(comp.length);
       setCrimeCount(crime.length);
       setScoresLoaded(true);
@@ -483,7 +537,9 @@ export default function Report() {
   const budgetAdequacy = data.budget >= costRange.max ? 90 : data.budget >= costRange.min ? 60 : 20;
   const safetyScore = crimeCount <= 5 ? 95 : crimeCount <= 15 ? 65 : crimeCount <= 30 ? 35 : 15;
 
-  const viability = Math.round((legalScore * 0.25) + (competitionScore * 0.25) + (budgetAdequacy * 0.25) + (safetyScore * 0.25));
+  const viability = Math.round((marketFitScore * 0.25) + (competitionScore * 0.25) + (budgetAdequacy * 0.25) + (safetyScore * 0.25));
+
+  console.log(`[Viability] Final scores — marketFit=${marketFitScore} competition=${competitionScore} budget=${budgetAdequacy} safety=${safetyScore} viability=${viability}`);
 
   return (
     <div className="min-h-screen bg-background px-4 py-8">
@@ -531,7 +587,7 @@ export default function Report() {
             {/* Score breakdown */}
             <div className="mt-6 rounded-xl border border-border bg-card p-6 space-y-4">
               <h3 className="text-lg font-semibold">Score Breakdown</h3>
-              <ScoreBar label="Legal Complexity" value={legalScore} weight="25%" />
+              <ScoreBar label="Market Fit" value={marketFitScore} weight="25%" />
               <ScoreBar label="Competition" value={competitionScore} weight="25%" />
               <ScoreBar label="Budget Adequacy" value={budgetAdequacy} weight="25%" />
               <ScoreBar label="Safety" value={safetyScore} weight="25%" />
